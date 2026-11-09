@@ -1,0 +1,344 @@
+
+@font-face {
+  font-family: 'Vazirmatn';
+  src: url('/fonts/Vazirmatn-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Vazirmatn';
+  src: url('/fonts/Vazirmatn-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Vazirmatn';
+  src: url('/fonts/Vazirmatn-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  color-scheme: dark;
+  --bg-primary: #0a0b0e;
+  --bg-surface: #14171d;
+  --bg-surface-hover: #1c2027;
+  --bg-card: #181b22;
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-active: rgba(16, 185, 129, 0.4);
+  --accent-green: #10b981;
+  --accent-green-dim: rgba(16, 185, 129, 0.14);
+  --accent-green-glow: rgba(16, 185, 129, 0.25);
+  --text-main: #f3f4f6;
+  --text-muted: #9ca3af;
+  --text-dim: #5c6370;
+  --on-accent: #000000;
+  --diff-del-text: #f87171;
+  --shadow-heavy: rgba(0, 0, 0, 0.6);
+}
+
+
+[data-theme='light'] {
+  color-scheme: light;
+  --bg-primary: #eef1f0;
+  --bg-surface: #ffffff;
+  --bg-surface-hover: #e7ece9;
+  --bg-card: #f1f5f3;
+  --border-subtle: rgba(15, 23, 20, 0.12);
+  --border-active: rgba(5, 150, 105, 0.45);
+  --accent-green: #059669;
+  --accent-green-dim: rgba(5, 150, 105, 0.12);
+  --accent-green-glow: rgba(5, 150, 105, 0.18);
+  --text-main: #111827;
+  --text-muted: #4b5563;
+  --text-dim: #9aa3ab;
+  --on-accent: #ffffff;
+  --diff-del-text: #dc2626;
+  --shadow-heavy: rgba(15, 23, 20, 0.15);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body, html, #root {
+  height: 100%; width: 100%;
+  background: transparent;
+  color: var(--text-main);
+  font-family: 'Vazirmatn', 'Plus Jakarta Sans', -apple-system, sans-serif;
+  overflow: hidden;
+  user-select: none;
+}
+
+.code-font {
+  font-family: 'JetBrains Mono', Consolas, monospace;
+}
+
+.selectable-text {
+  user-select: text !important;
+  cursor: text;
+}
+
+.installer-container {
+  height: 100vh;
+  width: 100vw;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 16px 20px 14px;
+  position: relative;
+  box-shadow: 0 24px 60px var(--shadow-heavy);
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+
+.titlebar-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 28px;
+  margin-bottom: 8px;
+}
+
+.brand-indicator {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--text-dim);
+  letter-spacing: 0.6px;
+}
+
+.brand-indicator .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-green);
+  box-shadow: 0 0 8px var(--accent-green);
+}
+
+
+.titlebar-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tb-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  width: 26px;
+  height: 24px;
+  border-radius: 5px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+.tb-btn:hover {
+  background: var(--bg-surface-hover);
+  color: var(--text-main);
+}
+.tb-close:hover {
+  background: #ef4444 !important;
+  color: #fff !important;
+}
+
+.tb-utility {
+  width: auto;
+  padding: 0 6px;
+  font-size: 10.5px;
+  font-weight: 700;
+  gap: 4px;
+}
+
+.tb-divider {
+  width: 1px;
+  height: 14px;
+  background: var(--border-subtle);
+  margin: 0 4px;
+}
+
+
+.installer-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  margin-top: 4px;
+}
+
+.logo-wrapper {
+  width: 58px;
+  height: 58px;
+  border-radius: 14px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-active);
+  box-shadow: 0 0 25px var(--accent-green-glow);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 12px;
+}
+
+.app-logo {
+  width: 38px;
+  height: 38px;
+  object-fit: contain;
+}
+
+.app-title {
+  font-size: 19px;
+  font-weight: 800;
+  color: var(--text-main);
+}
+
+.app-subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 3px;
+  margin-bottom: 22px;
+}
+
+.content-box {
+  width: 100%;
+  max-width: 370px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.path-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  text-align: inherit;
+}
+
+.path-label {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+.path-input-group {
+  display: flex;
+  align-items: center;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  overflow: hidden;
+  transition: border-color 0.15s ease;
+}
+.path-input-group:focus-within {
+  border-color: var(--border-active);
+}
+
+.path-input-group input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  padding: 8px 10px;
+  color: var(--text-main);
+  font-size: 11.5px;
+  font-family: 'JetBrains Mono', Consolas, monospace;
+}
+
+.path-input-group button {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  padding: 8px 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+.path-input-group button:hover {
+  color: var(--accent-green);
+}
+
+.primary-btn {
+  background: var(--accent-green);
+  color: var(--on-accent);
+  font-weight: 700;
+  font-size: 13px;
+  padding: 10px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 4px 14px var(--accent-green-glow);
+}
+.primary-btn:hover {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+}
+
+
+.progress-status {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.progress-bar-bg {
+  width: 100%;
+  height: 6px;
+  background: var(--bg-surface);
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: var(--accent-green);
+  box-shadow: 0 0 10px var(--accent-green);
+  transition: width 0.25s ease;
+}
+
+.install-note {
+  font-size: 10.5px;
+  color: var(--text-dim);
+}
+
+
+.result-state {
+  align-items: center;
+  padding: 10px 0;
+}
+
+.result-title {
+  font-size: 14.5px;
+  font-weight: 700;
+  margin-top: 10px;
+}
+
+.result-desc {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.error-text {
+  font-size: 11px;
+  color: var(--diff-del-text);
+  line-height: 1.6;
+}
+
+.installer-footer {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10.5px;
+  color: var(--text-dim);
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 10px;
+}

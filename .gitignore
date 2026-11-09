@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+installer/node_modules/
+
+# Browser profiles (real profiles live in %APPDATA%\MagNum)
+deepseek-profile/
+magnum-profile/
+.magnum/
+
+# Build output (payload zip + staged files)
+target/
+**/target/
+installer/dist/
+
+# Tauri generated files
+installer/src-tauri/gen/
+**/src-tauri/gen/
+
+# combine.js output
+project.txt
+
+# Temp / generated files
+fonts_temp.css
+*.log
+*.tsbuildinfo
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Editor / OS junk
+.vscode/*
+!.vscode/extensions.json
+.idea/

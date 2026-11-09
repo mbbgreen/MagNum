@@ -1,0 +1,47 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "magnum",
+  "version": "0.1.1",
+  "identifier": "com.green.magnum",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "magnum",
+        "width": 800,
+        "height": 600
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://magnum.nethersgames.com/api/magnum/update/{{target}}/{{arch}}/{{current_version}}"
+      ],
+      "dialog": false,
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEFCM0M4NjEzNDI0OEM3MzEKUldReHgwaENFNFk4cTBQZHNoRkx2SmU1SlU4MjRzdFp3T1VBT2VpRVR6ay9DbDg3TFFPQ1BkamgK"
+    }
+  },
+  "bundle": {
+    "active": false,
+    "targets": [],
+    "resources": {
+      "resources/backend": "backend"
+    },
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}
