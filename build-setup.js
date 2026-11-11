@@ -104,6 +104,9 @@ function main() {
   const version = syncVersions();
   console.log(`Target Version: ${version}`);
 
+  console.log('\n[0/4] Building Rust filesystem engine...');
+  run('npm run build:fs', MAGNUM_DIR);
+
   console.log('\n[1/4] Building main MagNum app (tauri build)...');
   run('npm run tauri build', MAGNUM_DIR);
 

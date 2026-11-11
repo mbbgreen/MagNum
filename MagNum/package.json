@@ -4,8 +4,9 @@
   "version": "0.1.1",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
+    "build:fs": "node scripts/build-fs.js",
+    "dev": "npm run build:fs && vite",
+    "build": "npm run build:fs && tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri"
   },

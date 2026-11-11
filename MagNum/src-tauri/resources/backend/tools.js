@@ -1,8 +1,65 @@
 'use strict';
 
 const fs = require('node:fs/promises');
+const fsSync = require('node:fs');
 const path = require('node:path');
-const { exec } = require('node:child_process');
+const { exec, spawn } = require('node:child_process');
+
+let FS_BIN_CACHE = null;
+function resolveFsBin() {
+  if (FS_BIN_CACHE) return FS_BIN_CACHE;
+  const name = process.platform === 'win32' ? 'magnum-fs.exe' : 'magnum-fs';
+  const candidates = [
+    process.env.MAGNUM_FS_BIN,
+    path.join(__dirname, name),
+    path.join(__dirname, '..', '..', 'magnum-fs', 'target', 'release', name)
+  ].filter(Boolean);
+  for (const c of candidates) {
+    try { fsSync.accessSync(c); FS_BIN_CACHE = c; return c; } catch {}
+  }
+  return null;
+}
+
+function runRustFs(payload, timeoutMs = 120000) {
+  return new Promise((resolve, reject) => {
+    const bin = resolveFsBin();
+    if (!bin) return reject(new Error('magnum-fs binary not found. Run: npm run build:fs'));
+
+    const child = spawn(bin, [], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+    const out = [];
+    const err = [];
+    let done = false;
+
+    const timer = setTimeout(() => {
+      if (done) return;
+      done = true;
+      try { child.kill(); } catch {}
+      reject(new Error('magnum-fs timed out'));
+    }, timeoutMs);
+
+    child.stdout.on('data', d => out.push(d));
+    child.stderr.on('data', d => err.push(d));
+    child.stdin.on('error', () => {});
+    child.on('error', e => {
+      if (done) return;
+      done = true; clearTimeout(timer); reject(e);
+    });
+    child.on('close', code => {
+      if (done) return;
+      done = true; clearTimeout(timer);
+      const text = Buffer.concat(out).toString('utf8').trim();
+      try {
+        resolve(JSON.parse(text));
+      } catch {
+        reject(new Error(
+          `magnum-fs bad output (exit ${code}): ${text.slice(0, 300)} ${Buffer.concat(err).toString('utf8').slice(0, 300)}`
+        ));
+      }
+    });
+
+    child.stdin.end(JSON.stringify(payload), 'utf8');
+  });
+}
 
 const MAX_LINES_PER_BATCH = 800;
 
@@ -332,7 +389,7 @@ class ProjectTools {
   }
 
   
-  async patchFile(filePath, searchCode, replaceCode) {
+  async patchFileJs(filePath, searchCode, replaceCode) {
     try {
       const fullPath = path.resolve(this.workspaceDir, filePath);
       let content = await fs.readFile(fullPath, 'utf-8');
@@ -427,7 +484,7 @@ class ProjectTools {
   }
 
 
-  async patchBatch(patches = []) {
+  async patchBatchJs(patches = []) {
     const results = [];
     const seen = new Set();
     const uniquePatches = [];
@@ -461,7 +518,7 @@ class ProjectTools {
           } catch (e) {  }
         }
 
-        const res = await this.patchFile(file, p.search, p.replace);
+        const res = await this.patchFileJs(file, p.search, p.replace);
         results.push({ file, success: res.success, message: res.message || res.error });
         this.log(res.success ? 'patched ' + file : 'patch failed ' + file + ': ' + (res.message || res.error), res.success ? 'out' : 'err');
 
@@ -480,13 +537,87 @@ class ProjectTools {
       details: results
     };
   }
-  async createFile(filePath, content) {
+  async createFileJs(filePath, content) {
     try {
       const fullPath = path.resolve(this.workspaceDir, filePath);
       await fs.mkdir(path.dirname(fullPath), { recursive: true });
       await fs.writeFile(fullPath, content, 'utf-8');
       this.log(`+ created ${filePath}`, 'out');
       return { success: true, message: `Created new file ${filePath}` };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  }
+
+  _replayLogs(logs) {
+    if (Array.isArray(logs)) for (const l of logs) this.log(l.line, l.kind || 'sys');
+  }
+
+  _useJsFallback() {
+    return process.env.MAGNUM_FS_FALLBACK === '1' && !resolveFsBin();
+  }
+
+  async patchFile(filePath, searchCode, replaceCode) {
+    if (this._useJsFallback()) return this.patchFileJs(filePath, searchCode, replaceCode);
+    try {
+      const res = await runRustFs({
+        op: 'patch_file',
+        workspace: this.workspaceDir,
+        file: filePath,
+        search: searchCode ?? '',
+        replace: replaceCode ?? ''
+      });
+      this._replayLogs(res.logs);
+      return res.success
+        ? { success: true, message: res.message }
+        : { success: false, error: res.error || res.message };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  }
+
+  async patchBatch(patches = []) {
+    if (this._useJsFallback()) return this.patchBatchJs(patches);
+    try {
+      const res = await runRustFs({
+        op: 'patch_batch',
+        workspace: this.workspaceDir,
+        patches: patches.map(p => ({
+          file: p.file,
+          search: p.search ?? '',
+          replace: p.replace ?? ''
+        }))
+      });
+      this._replayLogs(res.logs);
+      return {
+        success: Boolean(res.success),
+        total: res.total ?? 0,
+        successful: res.successful ?? 0,
+        details: res.details || []
+      };
+    } catch (err) {
+      return {
+        success: false,
+        total: patches.length,
+        successful: 0,
+        details: patches.map(p => ({ file: p.file, success: false, message: err.message }))
+      };
+    }
+  }
+
+  async createFile(filePath, content) {
+    if (this._useJsFallback()) return this.createFileJs(filePath, content);
+    try {
+      const res = await runRustFs({
+        op: 'create_file',
+        workspace: this.workspaceDir,
+        file: filePath,
+        content: content ?? ''
+      });
+      this._replayLogs(res.logs);
+      return res.success
+        ? { success: true, message: res.message }
+        : { success: false, error: res.error || res.message };
     } catch (err) {
       return { success: false, error: err.message };
     }

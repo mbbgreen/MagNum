@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { GitBranch } from 'lucide-react';
+import { GitBranch, Heart } from 'lucide-react';
 import { alertDialog } from '../modals/AppDialog';
 
 interface TopMenuBarProps {
@@ -200,6 +200,57 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
       </div>
 
 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+  <button
+    type="button"
+    onClick={(e) => {
+      e.stopPropagation();
+      const url = 'https://nethersgames.com/donate';
+      try {
+        const w = window.open(url, '_blank', 'noopener,noreferrer');
+        if (!w) {
+          const a = document.createElement('a');
+          a.href = url;
+          a.target = '_blank';
+          a.rel = 'noopener noreferrer';
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+        }
+      } catch {
+        window.location.href = url;
+      }
+    }}
+    title="حمایت از Nethers Games"
+    style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: 5,
+      padding: '3px 10px',
+      fontSize: 11,
+      fontWeight: 600,
+      color: '#4ade80',
+      background: 'linear-gradient(180deg, rgba(34,197,94,0.18), rgba(34,197,94,0.08))',
+      border: '1px solid rgba(34,197,94,0.45)',
+      borderRadius: 6,
+      cursor: 'pointer',
+      backdropFilter: 'blur(8px)',
+      WebkitBackdropFilter: 'blur(8px)',
+      boxShadow: '0 0 12px rgba(34,197,94,0.18), inset 0 1px 0 rgba(255,255,255,0.08)',
+      transition: 'all 0.18s ease',
+      lineHeight: 1
+    }}
+    onMouseEnter={(e) => {
+      e.currentTarget.style.background = 'linear-gradient(180deg, rgba(34,197,94,0.28), rgba(34,197,94,0.14))';
+      e.currentTarget.style.boxShadow = '0 0 18px rgba(34,197,94,0.35), inset 0 1px 0 rgba(255,255,255,0.12)';
+    }}
+    onMouseLeave={(e) => {
+      e.currentTarget.style.background = 'linear-gradient(180deg, rgba(34,197,94,0.18), rgba(34,197,94,0.08))';
+      e.currentTarget.style.boxShadow = '0 0 12px rgba(34,197,94,0.18), inset 0 1px 0 rgba(255,255,255,0.08)';
+    }}
+  >
+    <Heart size={11} fill="#4ade80" color="#4ade80" />
+    <span>Donate</span>
+  </button>
   {repoName && (
     <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--text-muted)' }}>
       <GitBranch size={12} color="var(--accent-green)" />

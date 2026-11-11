@@ -250,9 +250,15 @@ const AGENT_STRINGS = {
 };
 
 
-const RATE_LIMIT_TEXT_RE = /reached your rate limit|please try again later|reached your quota|quota for the day|wait for it to reset|upgrade to go further|too many requests|resource.{0,12}exhausted|\b429\b/i;
+const RATE_LIMIT_TEXT_RE = /reached your rate limit|please try again later|reached your quota|quota for the day|wait for it to reset|upgrade to go further|too many requests|resource.{0,12}exhausted|HTTP\s*429|status[^0-9\n]{0,10}429/i;
+
 function looksLikeRateLimit(text) {
-  return typeof text === 'string' && RATE_LIMIT_TEXT_RE.test(text);
+  if (typeof text !== 'string') return false;
+  const fence = /```[\s\S]*?```/g;
+  const prose = text.replace(fence, '').replace(/`[^`]*`/g, '');
+  if (/"action"\s*:/.test(prose)) return false;
+  if (prose.trim().length > 600) return false;
+  return RATE_LIMIT_TEXT_RE.test(prose);
 }
 
 class CodingAgent {
@@ -547,13 +553,12 @@ Reply ONLY with a single JSON action block.${providerFollowUpNote}`;
       this.emit('chat_url_captured', { url: liveUrl });
     }
 
-    let maxSteps = 30;
     let taskFinished = false;
     let rateLimitStop = false;
     let noNewStop = false;
     let loopRepeatCount = 0;
 
-    while (maxSteps-- > 0) {
+    while (true) {
       if (this.isStopped) break;
 
       this.emit('agent_status', { text: `${P} is thinking...` });
@@ -629,6 +634,12 @@ Reply ONLY with a single JSON action block.${providerFollowUpNote}`;
       }
 
       this.emit('agent_streaming_end', {});
+
+      if (looksLikeRateLimit(response)) {
+        console.warn('⚠️ Rate-limit banner detected in model response — stopping without any retry.');
+        rateLimitStop = true;
+      }
+
       if (rateLimitStop) {
         this.emit('gemini_rate_limit', { provider: 'gemini' });
         const msg = L.rateLimitGemini;
@@ -652,12 +663,6 @@ Reply ONLY with a single JSON action block.${providerFollowUpNote}`;
           taskFinished = true;
           break;
         }
-
-      if (looksLikeRateLimit(response)) {
-        console.warn('⚠️ Rate-limit banner detected in model response — stopping without any retry.');
-        rateLimitStop = true;
-        break;
-      }
 
       const decision = this.parseResponse(response);
 
@@ -1087,15 +1092,6 @@ if (toolFeedback.length > 60000) {
 
     if (this.isStopped) {
       this.emit('task_stopped', { message: 'Task was stopped by user.' });
-    } else if (!taskFinished) {
-      
-      console.warn('⚠️ Step limit reached (30 steps) without a finish action.');
-      this.emit('agent_message', {
-        role: 'agent',
-        text: '**Step limit reached (30 steps).** The agent did not conclude this task. Send a new prompt to continue.',
-        action: 'task_limit'
-      });
-      this.emit('task_finished', { summary: 'Step limit reached (30 steps).' });
     }
   }
 }
