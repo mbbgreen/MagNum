@@ -4,9 +4,20 @@ import { ChatMessage, FileNode, SessionMeta, RightPanelTab, Attachment, EditSumm
 import { embeddedBrowser } from '../utils/embeddedBrowser';
 
 
-async function getWsToken(): Promise<string> {
+export async function getBackendPort(): Promise<number> {
   try {
-    
+    const port = await invoke<number>('get_backend_port');
+    if (port && typeof port === 'number' && port > 0) {
+      return port;
+    }
+  } catch (err) {
+    console.warn('[backend-port] Rust command failed:', err);
+  }
+  return 5454;
+}
+
+async function getWsToken(port: number): Promise<string> {
+  try {
     const token = await invoke<string>('read_ws_token');
     if (token && typeof token === 'string' && token.length === 64) {
       return token;
@@ -14,17 +25,15 @@ async function getWsToken(): Promise<string> {
   } catch (err) {
     console.warn('[ws-token] Rust command failed, trying HTTP fallback:', err);
   }
-  
-  
+
   try {
-    const res = await fetch('http://localhost:5454/api/ws-token');
+    const res = await fetch(`http://127.0.0.1:${port}/api/ws-token`);
     const data = await res.json();
     if (data?.token) return data.token;
   } catch (err) {
     console.warn('[ws-token] HTTP fallback also failed:', err);
   }
-  
-  
+
   if (import.meta.env.DEV) {
     console.warn('[ws-token] Using empty token in DEV mode — unsafe for production!');
     return '';
@@ -89,21 +98,24 @@ const currentSessionIdRef = useRef<string | null>(currentSessionId);
     let retries = 0;
     let disposed = false; 
     let wsToken: string = '';
+    let port: number = 5454;
 
     const initializeAndConnect = async () => {
       try {
-        wsToken = await getWsToken();
+        port = await getBackendPort();
+        embeddedBrowser.setPort(port);
+        wsToken = await getWsToken(port);
       } catch (err) {
-        console.error('[ws] Could not get token:', err);
+        console.error('[ws] Could not get token/port:', err);
       }
       connect();
     };
 
     const connect = () => {
-      if (disposed) return; 
+      if (disposed) return;
       const wsUrl = wsToken
-        ? `ws://localhost:5454?token=${encodeURIComponent(wsToken)}`
-        : 'ws://localhost:5454';
+        ? `ws://127.0.0.1:${port}?token=${encodeURIComponent(wsToken)}`
+        : `ws://127.0.0.1:${port}`;
       socket = new WebSocket(wsUrl);
       socket.onopen = () => {
         retries = 0;

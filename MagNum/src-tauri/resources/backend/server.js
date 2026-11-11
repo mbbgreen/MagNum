@@ -20,7 +20,18 @@ const DATA_DIR = process.env.MAGNUM_DATA_DIR ||
   (process.env.APPDATA ? path.join(process.env.APPDATA, 'MagNum') : path.join(os.homedir(), '.magnum'));
 const PROFILE_DIR = path.join(DATA_DIR, 'magnum-profile');
 const GEMINI_PROFILE_DIR = path.join(DATA_DIR, 'gemini-profile');
-const PORT = 5454;
+const PORT = parseInt(process.env.MAGNUM_BACKEND_PORT || '5454', 10);
+const PORT_FILE = path.join(DATA_DIR, '.backend-port');
+
+async function writePortFile(actualPort) {
+  try {
+    await fs.mkdir(DATA_DIR, { recursive: true });
+    await fs.writeFile(PORT_FILE, String(actualPort), { mode: 0o600 });
+    console.log(`🔌 Backend port ${actualPort} written to ${PORT_FILE}`);
+  } catch (err) {
+    console.error('[FATAL] Could not write port file:', err.message);
+  }
+}
 
 
 
@@ -133,13 +144,12 @@ process.on('uncaughtException', (e) => {
   console.error('[FATAL] uncaughtException:', e && (e.stack || e.message || e));
 });
 server.on('error', (e) => {
-  console.error('[FATAL] server error:', e && e.message);
-  
-  
   if (e && e.code === 'EADDRINUSE') {
-    console.error('[FATAL] Port 5454 already in use — exiting duplicate MagNum backend.');
-    process.exit(0);
+    console.warn(`[WARN] Port ${PORT} already in use — retrying on dynamic port 0...`);
+    server.listen(0, '127.0.0.1');
+    return;
   }
+  console.error('[FATAL] server error:', e && e.message);
 });
 
 let browserContext = null;
@@ -423,7 +433,7 @@ server.on('request', async (req, res) => {
   if (req.method === 'GET' && req.url === '/api/ws-token') {
     
     const host = req.headers['host'] || '';
-    if (!host.startsWith('localhost:5454') && !host.startsWith('127.0.0.1:5454')) {
+    if (!host.startsWith('localhost:') && !host.startsWith('127.0.0.1:')) {
       res.writeHead(403);
       res.end();
       return;
@@ -473,6 +483,54 @@ server.on('request', async (req, res) => {
     });
     return;
   }
+
+  // ◄◄◄ اضافه شود: کنترل مستقیم و زندهٔ مرورگر تب داخلی
+  if (req.method === 'POST' && req.url === '/api/browser-action') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const payload = JSON.parse(body);
+        const page = await getEmbeddedWebviewPage();
+        if (page) {
+          if (payload.action === 'back') {
+            await page.goBack().catch(() => {});
+          } else if (payload.action === 'forward') {
+            await page.goForward().catch(() => {});
+          } else if (payload.action === 'reload') {
+            await page.reload().catch(() => {});
+          } else if (payload.action === 'navigate' && payload.url) {
+            await page.goto(payload.url, { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {});
+          }
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: true, url: page.url() }));
+          return;
+        }
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: 'Webview not found' }));
+      } catch (e) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: e.message }));
+      }
+    });
+    return;
+  }
+
+  // ◄◄◄ دریافت آدرس و عنوان فعلی برای به‌روزرسانی خودکار نوار آدرس
+  if (req.method === 'GET' && req.url === '/api/browser-info') {
+    try {
+      const page = await getEmbeddedWebviewPage();
+      if (page) {
+        const title = await page.title().catch(() => '');
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ url: page.url(), title }));
+        return;
+      }
+    } catch {}
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ url: '', title: '' }));
+    return;
+  }
 });
 
 function extractReadableTextFromHtml(html) {
@@ -513,26 +571,60 @@ async function getEmbeddedWebviewPage() {
     for (const ctx of contexts) {
       const pages = ctx.pages();
       for (const p of pages) {
-        const url = p.url();
-        
-        
-        if (
-          !url.includes('1420') &&
-          !url.includes('tauri://') &&
-          !url.includes('localhost:1420') &&
-          !url.endsWith('index.html') &&
-          url !== 'about:blank'
-        ) {
-          return p;
+        const rawUrl = p.url() || '';
+        const url = rawUrl.toLowerCase();
+
+        // 1. Skip blank / devtools pages
+        if (!url || url === 'about:blank' || url.startsWith('devtools://')) {
+          continue;
         }
-      }
-      
-      if (pages.length > 1) {
-        return pages[pages.length - 1];
+
+        // ۲. رد کردن قطعی پنجرهٔ اصلی توری بر اساس آدرس
+        if (
+          url.includes('tauri.localhost') ||
+          url.includes('tauri://') ||
+          url.includes('localhost:1420') ||
+          url.includes('127.0.0.1:1420') ||
+          url.endsWith('/index.html')
+        ) {
+          continue;
+        }
+
+        // ۳. رد کردن پنجره اصلی فقط در صورتی که ساختار نرم‌افزار مگنوم (نوار بالا، سایدبار) را داشته باشد
+        const isMainMagNumUi = await p.evaluate(() => {
+          return Boolean(
+            document.querySelector('.installer-container') ||
+            document.querySelector('.brand-indicator') ||
+            (document.getElementById('root') && document.querySelector('nav'))
+          );
+        }).catch(() => false);
+
+        if (isMainMagNumUi) {
+          continue;
+        }
+
+        // Prevent target="_blank" links from opening new windows or escaping to main window
+        await p.evaluate(() => {
+          if (window.__magnum_nav_hooked) return;
+          window.__magnum_nav_hooked = true;
+          document.addEventListener('click', (e) => {
+            const a = e.target && e.target.closest ? e.target.closest('a') : null;
+            if (a && a.href && (a.target === '_blank' || a.target === '_new')) {
+              e.preventDefault();
+              e.stopPropagation();
+              window.location.href = a.href;
+            }
+          }, true);
+          window.open = function(u) {
+            if (u) window.location.href = u;
+            return window;
+          };
+        }).catch(() => {});
+
+        return p;
       }
     }
   } catch (err) {
-    
     return null;
   }
   return null;
@@ -555,21 +647,31 @@ const browserTool = {
     const page = await getEmbeddedWebviewPage();
     if (page) {
       try {
-        await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 15000 });
-        const title = await page.title().catch(() => 'Web Page');
-        const text = await page.evaluate(() => document.body ? document.body.innerText : '').catch(() => '');
+        await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 20000 });
+        // یک مکث کوتاه برای بارگذاری محتوای داینامیک و فریم‌ورک‌های SPA (مثل Next.js دیجی‌کالا)
+        await page.waitForTimeout(2000);
+
+        const title = await page.title().catch(() => 'صفحه وب');
+        const text = await page.evaluate(() => {
+          if (!document.body) return '';
+          const clone = document.body.cloneNode(true);
+          clone.querySelectorAll('script, style, noscript, svg').forEach(el => el.remove());
+          return clone.innerText || '';
+        }).catch(() => '');
+
+        broadcast({ event: 'embedded_navigated', url: page.url(), title });
         return { url: page.url(), title, text };
       } catch (e) {
         console.warn('CDP Navigate error:', e.message);
       }
     }
 
-    
+    // در صورتی که وب‌ویو هنوز ساخته نشده بود
     try {
       const res = await embeddedRequest('embedded_navigate', { input: target });
-      return res || { url: target, title: 'Web Page', text: '' };
+      return res || { url: target, title: 'صفحه وب', text: '' };
     } catch {
-      return { url: target, title: 'Web Page', text: '' };
+      return { url: target, title: 'صفحه وب', text: '' };
     }
   },
 
@@ -586,19 +688,16 @@ const browserTool = {
       };
     }
 
-    let pageTitle = 'Web Page';
+    let pageTitle = 'صفحه وب';
     let rawText = '';
     const currentUrl = page.url();
 
     try {
-      pageTitle = await page.title().catch(() => 'Web Page');
-      
-      
+      pageTitle = await page.title().catch(() => 'صفحه وب');
       rawText = await page.evaluate(() => {
-        
+        if (!document.body) return '';
         const clone = document.body.cloneNode(true);
-        const toRemove = clone.querySelectorAll('script, style, noscript, svg');
-        toRemove.forEach(el => el.remove());
+        clone.querySelectorAll('script, style, noscript, svg').forEach(el => el.remove());
         return clone.innerText || '';
       }).catch(() => '');
     } catch (err) {
@@ -824,15 +923,31 @@ async function diagnoseSession(page) {
 
     
     const hasCaptcha = await page.evaluate(() => {
+      const inputEl = document.querySelector('#chat-input, textarea#chat-input, textarea, [contenteditable="true"]');
+      const isInputReady = inputEl && !inputEl.hasAttribute('disabled') && inputEl.offsetParent !== null;
+
+      const modalEl = document.querySelector('[role="dialog"], .ds-modal, .ds-dialog, .ds-modal-mask, [class*="modal-wrapper"], [class*="modal-overlay"]');
+      const isModalVisible = modalEl && (() => {
+        const s = window.getComputedStyle(modalEl);
+        return s.display !== 'none' && s.visibility !== 'hidden' && s.opacity !== '0';
+      })();
+
+      if (isInputReady && !isModalVisible) {
+        return false;
+      }
+
       const iframes = Array.from(document.querySelectorAll('iframe'));
       return iframes.some(f => {
         const src = (f.getAttribute('src') || '').toLowerCase();
         const title = (f.getAttribute('title') || '').toLowerCase();
-        if (src.includes('hcaptcha.com') || src.includes('challenges.cloudflare.com') || title.includes('hcaptcha')) {
-          const rect = f.getBoundingClientRect();
-          return rect.width > 120 && rect.height > 120;
-        }
-        return false;
+        const isCaptchaSrc = src.includes('hcaptcha.com') || src.includes('challenges.cloudflare.com') || title.includes('hcaptcha');
+        if (!isCaptchaSrc) return false;
+
+        const rect = f.getBoundingClientRect();
+        if (rect.width < 120 || rect.height < 120) return false;
+
+        const s = window.getComputedStyle(f);
+        return s.display !== 'none' && s.visibility !== 'hidden' && s.opacity !== '0' && f.offsetParent !== null;
       });
     }).catch(() => false);
 
@@ -2160,8 +2275,10 @@ async function autoRestoreSession() {
 
 restoreLastWorkspace();
 
-server.listen(PORT, async () => {
-  console.log(`🚀 MagNum Engine Server listening on ws://localhost:${PORT}`);
+server.listen(PORT, '127.0.0.1', async () => {
+  const actualPort = server.address().port;
+  console.log(`🚀 MagNum Engine Server listening on ws://127.0.0.1:${actualPort}`);
+  await writePortFile(actualPort);
   await writeWsTokenFile();
   autoRestoreSession();
 });

@@ -300,26 +300,80 @@ class DeepSeekDriver {
         }
 
         
+        const userSelectors = ['[class*="user-message"]', '[class*="UserMessage"]', '[data-message-author-role="user"]', '[data-role="user"]'];
+        const userEls = Array.from(document.querySelectorAll(userSelectors.join(',')));
+        const lastUserEl = userEls.length ? userEls[userEls.length - 1] : null;
+        const afterLastUser = (el) =>
+          !lastUserEl ||
+          el === lastUserEl ||
+          (lastUserEl.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
         const inThink = (el) => !!el.closest('[class*="think-content"], [class*="thinking"]');
         const afterThink = (el) => !thinkHeader || (thinkHeader.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
-        const notUser = (el) => !el.closest('[class*="user-message"], [class*="UserMessage"]');
+        const notUser = (el) => !el.closest(userSelectors.join(','));
+
+        const inputEl = document.querySelector('#chat-input, textarea, [contenteditable="true"]');
+        const beforeInput = (el) => {
+          if (!inputEl) return true;
+          return (inputEl.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_PRECEDING) !== 0;
+        };
 
         const MD_SEL = 'p[class*="ds-markdown"], [class*="ds-markdown-paragraph"], pre, [class*="code-block"]';
-        const allNodes = Array.from(document.querySelectorAll(MD_SEL)).filter(el => !inThink(el) && afterThink(el) && notUser(el) && visible(el));
+        const allNodes = Array.from(document.querySelectorAll(MD_SEL)).filter(el => !inThink(el) && afterThink(el) && notUser(el) && afterLastUser(el) && beforeInput(el) && visible(el));
         const nodes = allNodes.filter(el => !allNodes.some(o => o !== el && o.contains(el)));
         let bodyText = nodes.map(n => (n.innerText || n.textContent || '').trim()).filter(Boolean).join('\n');
 
+        if (!bodyText) {
+          const codeBlocks = Array.from(document.querySelectorAll('pre, code, [class*="code-block"]'))
+            .filter(el => visible(el) && afterLastUser(el) && beforeInput(el) && !inThink(el));
+          const lastCode = codeBlocks[codeBlocks.length - 1];
+          if (lastCode) {
+            const codeText = (lastCode.innerText || '').trim();
+            if (codeText.length > 5) bodyText = codeText;
+          }
+        }
+
+        if (!bodyText) {
+          const responseSelectors = ['[class*="chat-turn"]', '[class*="message-row"]', '[class*="chat-message"]', '[data-message-author-role="assistant"]', '[role="article"]'];
+          const responseContainers = Array.from(document.querySelectorAll(responseSelectors.join(',')))
+            .filter(el => visible(el) && afterLastUser(el) && beforeInput(el) && !inThink(el));
+          const lastResponse = responseContainers[responseContainers.length - 1];
+          if (lastResponse) {
+            const respText = (lastResponse.innerText || '').trim();
+            if (respText.length > 5) bodyText = respText;
+          }
+        }
+
         
-        const hasBottomActions = !!document.querySelector('button[aria-label*="copy" i], button[aria-label*="good response" i]');
-        const hasContinueBtn = Array.from(document.querySelectorAll('div[role="button"], button')).some(b => (b.innerText || '').trim() === 'Continue');
+        if (!bodyText) {
+          bodyText = (document.body.innerText || '').trim();
+        }
+
+        const hasBottomActions = Array.from(document.querySelectorAll('button[aria-label*="copy" i], button[aria-label*="good response" i]'))
+          .some(b => visible(b) && afterLastUser(b));
+        const hasContinueBtn = Array.from(document.querySelectorAll('div[role="button"], button'))
+          .some(b => (b.innerText || '').trim() === 'Continue' && afterLastUser(b));
 
         
         let hasActiveCaptcha = false;
-        for (const f of Array.from(document.querySelectorAll('iframe'))) {
-          const src = (f.getAttribute('src') || '').toLowerCase();
-          if (src.includes('hcaptcha.com') || src.includes('challenges.cloudflare.com')) {
-            const rect = f.getBoundingClientRect();
-            if (rect.width > 120 && rect.height > 120 && visible(f)) { hasActiveCaptcha = true; break; }
+        const isInputReady = inputEl && !inputEl.hasAttribute('disabled') && inputEl.offsetParent !== null;
+
+        const modalEl = document.querySelector('[role="dialog"], .ds-modal, .ds-dialog, .ds-modal-mask, [class*="modal-overlay"]');
+        const isModalVisible = modalEl && (() => {
+          const s = window.getComputedStyle(modalEl);
+          return s.display !== 'none' && s.visibility !== 'hidden' && s.opacity !== '0';
+        })();
+
+        if (!isInputReady || isModalVisible) {
+          for (const f of Array.from(document.querySelectorAll('iframe'))) {
+            const src = (f.getAttribute('src') || '').toLowerCase();
+            const title = (f.getAttribute('title') || '').toLowerCase();
+            if (src.includes('hcaptcha.com') || src.includes('challenges.cloudflare.com') || title.includes('hcaptcha')) {
+              const rect = f.getBoundingClientRect();
+              if (rect.width > 120 && rect.height > 120 && visible(f) && f.offsetParent !== null) {
+                hasActiveCaptcha = true;
+                break;
+              }
+            }
           }
         }
 
@@ -343,12 +397,24 @@ class DeepSeekDriver {
     let lastBodyLength = 0;
     let stableChecks = 0;
     let idleTicks = 0;
+    let waitLoops = 0;
+    let sawRunning = false;
+    
+    // ثبت وضعیت اولیه قبل از دریافت پاسخ جدید
+    const initialState = await this.extractLiveState();
+    const initialText = (initialState && typeof initialState.bodyText === 'string') 
+      ? initialState.bodyText.trim() 
+      : '';
+
+    // فرصت کوتاه برای ثبت پیام کاربر در DOM دیپ‌سیک
+    await this.page.waitForTimeout(1000);
 
     while (true) {
       if (this.isAborted) throw new Error('Task was cancelled by user.');
       if (!this.page || this.page.isClosed()) throw new Error('DeepSeek browser window was closed.');
 
-      await this.page.waitForTimeout(900);
+      await this.page.waitForTimeout(800);
+      waitLoops++;
       const state = await this.extractLiveState();
       if (!state) continue;
 
@@ -358,56 +424,88 @@ class DeepSeekDriver {
         throw err;
       }
 
-      
-        if (state.isThinkingInProgress) {
-          if (typeof onStatus === 'function') onStatus('DeepSeek is thinking...');
-          stableChecks = 0;
-          continue;
-        }
-
-      
-        if (state.isStopButtonActive) {
-          if (typeof onStatus === 'function') onStatus('DeepSeek is writing...');
-          stableChecks = 0;
-          continue;
-        }
-
-      
-      if (state.hasContinueBtn && !state.isStopButtonActive) {
-        await this.clickContinueButton();
-        await this.page.waitForTimeout(1500);
+      // در حال فکر کردن دیپ‌سیک
+      if (state.isThinkingInProgress) {
+        sawRunning = true;
         stableChecks = 0;
+        idleTicks = 0;
+        if (typeof onStatus === 'function') onStatus('DeepSeek is thinking...');
         continue;
       }
 
-      
-      if (state.bodyText && state.bodyText.length > 5) {
-        if (state.bodyText.length === lastBodyLength) {
-          stableChecks++;
-        } else {
-          lastBodyLength = state.bodyText.length;
-          stableChecks = 0;
-          if (onProgress) onProgress({ text: state.bodyText });
+      // دکمه توقف نشان‌دهنده در حال نوشتن بودن است
+      if (state.isStopButtonActive) {
+        sawRunning = true;
+        stableChecks = 0;
+        idleTicks = 0;
+        if (typeof onStatus === 'function') onStatus('DeepSeek is writing...');
+        continue;
+      }
+
+      // کلیک خودکار روی دکمه Continue در صورت بریده شدن متن
+      if (state.hasContinueBtn && !state.isStopButtonActive) {
+        sawRunning = true;
+        await this.clickContinueButton();
+        await this.page.waitForTimeout(1500);
+        stableChecks = 0;
+        idleTicks = 0;
+        continue;
+      }
+
+      const rawText = (state.bodyText || '').trim();
+      // ✂️ حذف پیشوند پاسخ قبلی: اگر اسکوپ DOM بشکند، متن به‌صورت
+      // «قدیم + جدید» می‌آید؛ فقط بخش جدید را نگه دار
+      const stripStale = (t) => {
+        if (!initialText || t === initialText) return '';
+        if (t.startsWith(initialText)) return t.slice(initialText.length).trim();
+        return t;
+      };
+      const currentText = stripStale(rawText);
+
+      if (rawText.length > 5) {
+        const isStrictlyNew = currentText.length > 0;
+
+        if (!isStrictlyNew) {
+          // اگر متن هنوز همان متن نوبت قبل است، هرگز آن را نپذیر
+          if (waitLoops > 60 && !sawRunning) {
+            const err = new Error('NO_NEW_RESPONSE: DeepSeek never started a new reply for this turn.');
+            err.code = 'NO_NEW_RESPONSE';
+            throw err;
+          }
+          if (typeof onStatus === 'function') onStatus('DeepSeek is preparing response...');
+          continue;
         }
 
-        
-        if (stableChecks >= 2 || state.hasBottomActions) {
-          
+        // اگر متن جدید آمده است، ثبات طول آن را بسنج
+        if (currentText.length === lastBodyLength) {
+          stableChecks++;
+        } else {
+          lastBodyLength = currentText.length;
+          stableChecks = 0;
+          if (onProgress) onProgress({ text: currentText });
+        }
+
+        // پایان واقعی پاسخ: متن جدید آمده، تغییر نکرده و نشانه‌های پایان چت ظاهر شده‌اند
+        if (stableChecks >= 3 || (state.hasBottomActions && stableChecks >= 2)) {
           await this.page.waitForTimeout(1000);
           const verifyState = await this.extractLiveState();
-
+          
           if (verifyState && !verifyState.isStopButtonActive && !verifyState.isThinkingInProgress) {
-            console.log('✅ DeepSeek response 100% finished and verified.');
-            return verifyState.bodyText;
+            const verifiedText = stripStale((verifyState.bodyText || '').trim());
+            if (verifiedText.length > 5) {
+              console.log('✅ DeepSeek response 100% finished and verified as new.');
+              return verifiedText;
+            }
           }
         }
         continue;
       }
 
-      
       idleTicks++;
-      if (idleTicks >= 30) {
-        throw new Error('DeepSeek response finished but content could not be captured. Please re-send your prompt.');
+      if (idleTicks >= 40) {
+        const err = new Error('NO_NEW_RESPONSE: DeepSeek response finished but content could not be captured.');
+        err.code = 'NO_NEW_RESPONSE';
+        throw err;
       }
     }
   }

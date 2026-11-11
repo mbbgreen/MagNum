@@ -90,7 +90,7 @@ export const translations = {
     httpMode: 'حالت سازگاری پروتکل HTTP',
     httpModeDesc: 'پروتکل HTTP/2 برای کاهش تاخیر در استریم پاسخ‌ها پیشنهاد می‌شود.',
     runDiagnostic: 'اجرای عیب‌یابی شبکه',
-    diagnosticDesc: 'بررسی ارتباط زنده با سرور لوکال ۵۴۵۴ و وب‌سایت دیپ‌سیک',
+    diagnosticDesc: 'بررسی ارتباط زنده با سرور لوکال انجین و وب‌سایت دیپ‌سیک',
     activeModels: 'مدل‌های در دسترس',
     activeModelsDesc: 'موتورهای فعال دیپ‌سیک در سشن کنونی',
     defaultModel: 'مدل پیش‌فرض اجرای دستورات',

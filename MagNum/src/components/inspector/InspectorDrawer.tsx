@@ -877,6 +877,10 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
     if (tab !== 'browser') {
       embeddedBrowser.hide();
     }
+    return () => {
+      // Always hide the native webview on unmount so it never floats over the UI
+      embeddedBrowser.hide();
+    };
   }, [tab]);
 
   if (!tab) return null;

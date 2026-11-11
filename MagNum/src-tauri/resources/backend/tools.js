@@ -516,7 +516,18 @@ class ProjectTools {
 
   
   async listDirectory(targetPath, depth = 3, maxPerDir = 50) {
-    const base = path.resolve(targetPath || this.workspaceDir);
+    let base;
+    const cleanTarget = (targetPath || '').trim();
+    
+    // اگر خالی بود یا نقطه بود، حتماً از دایرکتوری ورک‌اسپیس استفاده کن
+    if (!cleanTarget || cleanTarget === '.' || cleanTarget === './' || cleanTarget === '.\\') {
+      base = this.workspaceDir;
+    } else if (path.isAbsolute(cleanTarget)) {
+      base = path.resolve(cleanTarget);
+    } else {
+      // مسیر نسبی باید همیشه داخل ورک‌اسپیس حل شود
+      base = path.resolve(this.workspaceDir, cleanTarget);
+    }
     const safeDepth = Math.min(Math.max(Number(depth) || 3, 1), 4);
     const build = async (dir, d) => {
       if (d > safeDepth) return '';
@@ -557,7 +568,9 @@ class ProjectTools {
     const BINARY_EXTS = ['.png', '.jpg', '.jpeg', '.gif', '.ico', '.svg', '.woff', '.woff2', '.ttf', '.eot', '.mp4', '.mp3', '.pdf', '.zip', '.tar', '.gz', '.lock', '.map', '.exe', '.dll', '.bin'];
 
     const matches = [];
-    const searchRoot = rootDir ? path.resolve(rootDir) : this.workspaceDir;
+    const searchRoot = rootDir 
+      ? (path.isAbsolute(rootDir) ? path.resolve(rootDir) : path.resolve(this.workspaceDir, rootDir))
+      : this.workspaceDir;
     const searchDir = async (dir) => {
       if (matches.length >= maxResults) return;
       try {

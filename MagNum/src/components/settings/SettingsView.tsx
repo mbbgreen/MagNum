@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { Language, translations } from '../../i18n/translations';
 import { alertDialog } from '../modals/AppDialog';
+import { NethersLogo } from '../shared/NethersLogo';
 
 interface SettingsViewProps {
   provider?: 'deepseek' | 'gemini';
@@ -253,11 +254,41 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
         </div>
 
-        <div style={{ paddingTop: '10px', borderTop: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <div style={{ width: '22px', height: '22px', borderRadius: '50%', background: 'rgba(16, 185, 129, 0.2)', color: 'var(--accent-green)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 800 }}>
-            MG
+        <div style={{ paddingTop: '10px', borderTop: '1px solid var(--border-subtle)' }}>
+          <div
+            className="hover-bright"
+            onClick={() => {
+              import('@tauri-apps/plugin-opener')
+                .then(m => m.openUrl('https://nethersgames.com'))
+                .catch(() => window.open('https://nethersgames.com', '_blank'));
+            }}
+            title="Nethers Games — سازنده مگنوم"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              cursor: 'pointer',
+              padding: '2px 4px',
+              borderRadius: 8
+            }}
+          >
+            <div style={{
+              width: 24,
+              height: 24,
+              borderRadius: '50%',
+              flexShrink: 0,
+              background: 'var(--accent-green-dim)',
+              color: 'var(--accent-green)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              <NethersLogo size={14} />
+            </div>
+            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--accent-green)' }}>
+              NethersGames
+            </span>
           </div>
-          <span style={{ fontSize: '12px', fontWeight: 600 }}>MBB GREEN</span>
         </div>
       </aside>
 

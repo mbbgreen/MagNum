@@ -130,6 +130,40 @@ fn read_ws_token(app_handle: tauri::AppHandle) -> Result<String, String> {
     Ok(trimmed)
 }
 
+#[tauri::command]
+fn get_backend_port(app_handle: tauri::AppHandle) -> Result<u16, String> {
+    let data_dir = app_handle
+        .path()
+        .app_data_dir()
+        .or_else(|_| {
+            if cfg!(target_os = "windows") {
+                std::env::var("APPDATA")
+                    .map(|appdata| std::path::PathBuf::from(appdata).join("MagNum"))
+                    .map_err(|e| e.to_string())
+            } else {
+                std::env::var("HOME")
+                    .map(|home| std::path::PathBuf::from(home).join(".magnum"))
+                    .map_err(|e| e.to_string())
+            }
+        })
+        .map_err(|e| format!("Failed to resolve data dir: {}", e))?;
+
+    let port_file = data_dir.join(".backend-port");
+    if port_file.exists() {
+        if let Ok(content) = std::fs::read_to_string(&port_file) {
+            if let Ok(port) = content.trim().parse::<u16>() {
+                if port > 0 {
+                    return Ok(port);
+                }
+            }
+        }
+    }
+
+    std::env::var("MAGNUM_BACKEND_PORT")
+        .map_err(|_| "MAGNUM_BACKEND_PORT not set".to_string())
+        .and_then(|p| p.parse::<u16>().map_err(|e| e.to_string()))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -173,11 +207,13 @@ pub fn run() {
 
             let node_exe = backend_dir.join("node.exe");
             let cdp_port = std::env::var("MAGNUM_CDP_PORT").unwrap_or_else(|_| "9222".into());
+            let backend_port = std::env::var("MAGNUM_BACKEND_PORT").unwrap_or_else(|_| "5454".into());
             let child = Command::new(&node_exe)
                 .arg("server.js")
                 .current_dir(&backend_dir)
                 .env("MAGNUM_DATA_DIR", &data_dir)
                 .env("MAGNUM_CDP_PORT", &cdp_port)
+                .env("MAGNUM_BACKEND_PORT", &backend_port)
                 .creation_flags(CREATE_NO_WINDOW)
                 .spawn()
                 .expect("failed to spawn node server");
@@ -216,7 +252,7 @@ pub fn run() {
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![greet, set_app_theme, open_url, read_ws_token])
+        .invoke_handler(tauri::generate_handler![greet, set_app_theme, open_url, read_ws_token, get_backend_port])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

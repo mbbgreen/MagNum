@@ -470,7 +470,7 @@ class GeminiDriver {
     let waitLoops = 0;
     let sawRunning = false;
     const initialState = await this.extractLiveState();
-    const initialText = initialState && typeof initialState.bodyText === 'string' ? initialState.bodyText : '';
+    const initialText = (initialState && typeof initialState.bodyText === 'string') ? initialState.bodyText.trim() : '';
     await this.page.waitForTimeout(1500);
     while (true) {
       if (this.isAborted) throw new Error('Task was cancelled by user.');
@@ -496,24 +496,37 @@ class GeminiDriver {
         
         continue;
       }
-      if (state.bodyText && state.bodyText.length > 5) {
-        const isNewContent = state.bodyText !== initialText;
-        const canAccept = isNewContent || sawRunning || waitLoops > 25;
+      const rawText = (state.bodyText || '').trim();
+      const stripStale = (t) => {
+        if (!initialText || t === initialText) return '';
+        if (t.startsWith(initialText)) return t.slice(initialText.length).trim();
+        return t;
+      };
+      const currentText = stripStale(rawText);
+
+      if (rawText.length > 5) {
+        const isNewContent = currentText.length > 0;
+        const canAccept = isNewContent || sawRunning;
         if (!canAccept) {
-          
+          if (waitLoops > 50 && !sawRunning) {
+            const err = new Error('NO_NEW_RESPONSE: Gemini never started a new reply for this turn.');
+            err.code = 'NO_NEW_RESPONSE';
+            throw err;
+          }
           if (typeof onStatus === 'function') onStatus('Gemini (AI Studio) is thinking and writing code...');
           continue;
         }
-        if (state.bodyText.length === lastBodyLength) {
+        if (currentText.length === lastBodyLength) {
           stableSeconds++;
           const need = 2; 
           if (stableSeconds >= need) {
             
             await this.page.waitForTimeout(800);
             const verifyState = await this.extractLiveState();
-            if (verifyState && !verifyState.stopVisible && verifyState.bodyText === state.bodyText) {
+            const verifiedText = stripStale((verifyState && verifyState.bodyText ? verifyState.bodyText.trim() : ''));
+            if (verifyState && !verifyState.stopVisible && verifiedText === currentText && verifiedText.length > 5) {
               console.log('✅ AI Studio response finished and verified.');
-              return state.bodyText;
+              return verifiedText;
             }
             
             if (verifyState && verifyState.stopVisible) sawRunning = true;
@@ -522,9 +535,9 @@ class GeminiDriver {
             continue;
           }
         } else {
-          lastBodyLength = state.bodyText.length;
+          lastBodyLength = currentText.length;
           stableSeconds = 0;
-          if (onProgress) onProgress({ text: state.bodyText });
+          if (onProgress) onProgress({ text: currentText });
         }
         idleEmpty = 0;
         continue;

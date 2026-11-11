@@ -28,6 +28,9 @@ You MUST reply with a SINGLE markdown code block containing your JSON decision:
    - Once file content is delivered, do NOT re-read the exact same lines.
 5. FAST THINKING:
    - Keep "thought" strictly under 2 sentences. English only.
+6. USE PROVIDED PROJECT TREE:
+   - The full file tree of the user's workspace is ALREADY provided below under "PROJECT FILE TREE".
+   - DO NOT call "list_dir" on "." or root unless the user explicitly asks to scan an external directory outside the workspace!
 
 ## AVAILABLE ACTIONS:
 
@@ -334,7 +337,8 @@ class CodingAgent {
       .trim();
 
     let jsonString = '';
-    const blockMatch = cleanText.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    const allBlocks = [...cleanText.matchAll(/```(?:json)?\s*([\s\S]*?)\s*```/gi)];
+    const blockMatch = allBlocks.length ? allBlocks[allBlocks.length - 1] : null;
     if (blockMatch) {
       jsonString = blockMatch[1].trim();
     } else if (cleanText.trim().startsWith('{')) {
@@ -460,6 +464,7 @@ class CodingAgent {
     const L = AGENT_STRINGS[options.lang === 'fa' ? 'fa' : 'en'] || AGENT_STRINGS.en;
     const P = options.provider === 'gemini' ? 'Gemini' : 'DeepSeek';
     let lastReadSignature = null;
+let lastListSignature = null; // اضافه شد
     let consecutiveFormatRetries = 0;
 
     const isFirstMessage = (options.isFirstMessage !== undefined)
@@ -545,6 +550,8 @@ Reply ONLY with a single JSON action block.${providerFollowUpNote}`;
     let maxSteps = 30;
     let taskFinished = false;
     let rateLimitStop = false;
+    let noNewStop = false;
+    let loopRepeatCount = 0;
 
     while (maxSteps-- > 0) {
       if (this.isStopped) break;
@@ -575,7 +582,12 @@ Reply ONLY with a single JSON action block.${providerFollowUpNote}`;
         } catch (waitErr) {
           
           if (waitErr.code === 'CAPTCHA_REQUIRED') {
-            throw waitErr;
+            if (waitErr.code === 'NO_NEW_RESPONSE' || (waitErr.message && waitErr.message.includes('NO_NEW_RESPONSE'))) {
+            console.warn('⚠️ Stale-answer protection: no new model response detected — stopping safely.');
+            noNewStop = true;
+            break;
+          }
+          throw waitErr;
           }
 
           if (waitErr.code === 'GEMINI_RATE_LIMIT' || (waitErr.message && waitErr.message.includes('GEMINI_RATE_LIMIT'))) {
@@ -630,6 +642,17 @@ Reply ONLY with a single JSON action block.${providerFollowUpNote}`;
 
       
       
+        if (noNewStop) {
+          const msg = options.lang === 'fa'
+            ? '**پاسخ جدیدی از مدل دریافت نشد.** محافظ ضد پاسخ قدیمی جلوی نمایش جواب اشتباه (متعلق به تسک قبلی) را گرفت؛ هیچ تغییری اعمال نشد. لطفاً پرامپت را دوباره بفرستید.'
+            : '**No new model response was detected for this turn.** The stale-answer protection blocked a wrong (previous-turn) answer; no changes were made. Please re-send your prompt.';
+          this.emit('agent_status', { text: 'No new response detected — task stopped safely.' });
+          this.emit('agent_message', { role: 'agent', text: msg, thought: '', action: 'finish' });
+          this.emit('task_finished', { summary: msg });
+          taskFinished = true;
+          break;
+        }
+
       if (looksLikeRateLimit(response)) {
         console.warn('⚠️ Rate-limit banner detected in model response — stopping without any retry.');
         rateLimitStop = true;
@@ -727,15 +750,22 @@ Reply ONLY with a single JSON action block.${providerFollowUpNote}`;
         }).sort().join('|');
 
         if (currentSignature === lastReadSignature) {
-          console.log('🛑 Loop detected: Model requested the EXACT same file & range.');
-          toolFeedback = `⚠️ NOTICE: You just received these exact files and line ranges in the immediately preceding turn.
+          loopRepeatCount++;
+          console.log(`🛑 Loop detected (${loopRepeatCount}x): same file & range re-requested.`);
+          toolFeedback = loopRepeatCount >= 2
+            ? `⚠️ HARD STOP: You requested the EXACT same files/ranges ${loopRepeatCount} times in a row. Their content is ALREADY in your context above. Further identical read_files will be IGNORED.
+- If you located the issue: reply with "patch_file" NOW.
+- If you need a symbol location: reply with "search_code" NOW.
+- If you have enough context: reply with "finish" NOW.`
+            : `⚠️ NOTICE: You just received these exact files and line ranges in the immediately preceding turn.
 Their full content is already displayed right above in your conversation history.
 - Do NOT re-read the exact same lines.
 - If you need another part of the file (e.g. lines 5001+), specify "start_line" and "end_line".
 - If you found the issue, proceed immediately with "patch_file".
 - If you need to locate a specific function, use "search_code".`;
-         } else {
-           lastReadSignature = currentSignature;
+        } else {
+          loopRepeatCount = 0;
+          lastReadSignature = currentSignature;
            console.log(`📖 Reading ${files.length} file(s):`, files.join(', '));
            const fileRangeDesc = files.map(f => {
              const r = ranges[f];
@@ -805,16 +835,24 @@ Their full content is already displayed right above in your conversation history
       else if (decision.action === 'list_dir') {
         const target = decision.params?.path || '.';
         const depth = typeof decision.params?.depth === 'number' ? decision.params.depth : 3;
-        console.log(`📂 Listing directory: ${target}`);
-        this.emit('agent_status', { text: `Listing directory: ${target}` });
-        const listResult = await this.tools.listDirectory(target, depth);
-        this.emit('agent_message', {
-          role: 'agent',
-          text: `**Listed directory:** \`${listResult.path}\``,
-          thought: fullThought,
-          action: 'list_dir'
-        });
-        toolFeedback = `TOOL RESULT:\n\`\`\`\n${listResult.tree}\n\`\`\``;
+
+        // اگر دقیقاً همین پوشه را در دور قبل درخواست داده بود، جلوی درخواست تکراری را بگیر
+        if (lastListSignature === `${target}:${depth}`) {
+          console.log(`🛑 Loop detected on list_dir: ${target}`);
+          toolFeedback = `⚠️ NOTICE: You already received the directory listing for "${target}" in the previous turn. Look at your conversation history above and proceed directly with "finish" or inspection of specific files using "read_files".`;
+        } else {
+          lastListSignature = `${target}:${depth}`;
+          console.log(`📂 Listing directory: ${target}`);
+          this.emit('agent_status', { text: `Listing directory: ${target}` });
+          const listResult = await this.tools.listDirectory(target, depth);
+          this.emit('agent_message', {
+            role: 'agent',
+            text: `**Listed directory:** \`${listResult.path}\``,
+            thought: fullThought,
+            action: 'list_dir'
+          });
+          toolFeedback = `TOOL RESULT:\n\`\`\`\n${listResult.tree}\n\`\`\``;
+        }
       }
       else if (decision.action === 'continue_reading') {
         if (this.pendingChunks.length > 0) {
