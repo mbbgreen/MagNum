@@ -9,6 +9,31 @@ const AI_STUDIO_NEW_CHAT = `https://aistudio.google.com/prompts/new_chat?model=$
 
 const MAGNUM_THINKING_LEVEL = process.env.MAGNUM_THINKING_LEVEL || 'medium';
 
+const GEMINI_MSG = {
+  en: {
+    closed: 'Gemini session was closed. Please reconnect.',
+    notReady: 'Gemini is not ready to receive messages yet. If a Google sign-in window is open, please sign in first.',
+    sendFailed: 'Could not send message to Gemini. Please start a new chat and try again.',
+    cancelled: 'Task was cancelled by user.',
+    thinking: 'Gemini is thinking and writing...',
+    preparing: 'Gemini is preparing response...',
+    errorPrefix: (e) => `Gemini error: ${e}`,
+    timeout: 'Gemini response timed out before completion. Please re-send your prompt.',
+    mediaRejected: 'Gemini rejected the attached file.'
+  },
+  fa: {
+    closed: 'اتصال با \u200FGemini\u200F قطع شده است. لطفاً دوباره متصل شوید.',
+    notReady: '\u200FGemini\u200F هنوز آماده دریافت پیام نیست. اگر پنجره ورود گوگل باز است، ابتدا وارد حساب خود شوید.',
+    sendFailed: 'ارسال پیام به \u200FGemini\u200F انجام نشد. لطفاً یک گفتگوی جدید باز کنید و دوباره تلاش کنید.',
+    cancelled: 'عملیات توسط کاربر متوقف شد.',
+    thinking: '\u200FGemini\u200F در حال فکر کردن و نوشتن است...',
+    preparing: '\u200FGemini\u200F در حال آماده‌سازی پاسخ است...',
+    errorPrefix: (e) => `خطای \u200FGemini\u200F: \u200F${e}\u200F`,
+    timeout: 'زمان انتظار برای دریافت پاسخ \u200FGemini\u200F به پایان رسید. لطفاً پیام خود را دوباره بفرستید.',
+    mediaRejected: 'فایل پیوست‌شده توسط \u200FGemini\u200F پذیرفته نشد.'
+  }
+};
+
 
 async function injectPromptAIStudio(content) {
   const norm = (s) => (s || '').replace(/\r/g, '').replace(/\u00a0/g, ' ').trim();
@@ -72,6 +97,13 @@ class GeminiDriver {
     this.page = page;
     this.isAborted = false;
     this.thinkingLevel = MAGNUM_THINKING_LEVEL;
+    this._baseline = null;
+    this.lang = 'en';
+  }
+  t(key, ...args) {
+    const table = GEMINI_MSG[this.lang === 'fa' ? 'fa' : 'en'] || GEMINI_MSG.en;
+    const v = table[key];
+    return typeof v === 'function' ? v(...args) : v;
   }
   abort() {
     this.isAborted = true;
@@ -309,7 +341,8 @@ class GeminiDriver {
   }
   
   async sendMessage(text, options = {}) {
-    if (!this.page || this.page.isClosed()) throw new Error('پنجره مرورگر Gemini بسته است.');
+    if (options.lang) this.lang = options.lang === 'fa' ? 'fa' : 'en';
+    if (!this.page || this.page.isClosed()) throw new Error(this.t('closed'));
     if (!this.page.url().includes('aistudio.google.com/prompts')) {
       await this.page.goto(AI_STUDIO_NEW_CHAT, { waitUntil: 'domcontentloaded', timeout: 20000 });
       await this.page.waitForTimeout(1200);
@@ -321,8 +354,15 @@ class GeminiDriver {
     } else if (options.isFirstMessage) {
       await this.setThinkingLevel(this.thinkingLevel || MAGNUM_THINKING_LEVEL);
     }
+    // ★ Baseline BEFORE send — snapshot existing model-turn ids (stale-answer guard)
+    const pre = await this.extractLiveState();
+    this._baseline = {
+      ids: (pre && pre.turnIds) || [],
+      lastText: (pre && pre.bodyText) || '',
+      count: (pre && pre.turnCount) || 0
+    };
     const input = await this.findInputElement();
-    if (!input) throw new Error('فیلد ورودی AI Studio یافت نشد (اگر صفحه لاگین گوگل باز است، اول Gemini را Connect کنید).');
+    if (!input) throw new Error(this.t('notReady'));
     await input.focus();
     await this.page.waitForTimeout(150);
     let result = null;
@@ -332,7 +372,7 @@ class GeminiDriver {
       await this.page.waitForTimeout(400);
     }
     if (!result || !result.ok) {
-      throw new Error(`تزریق متن به AI Studio ناموفق بود (روش: ${result && result.via}). یک چت جدید باز کنید و دوباره تلاش کنید.`);
+      throw new Error(this.t('sendFailed'));
     }
     console.log(`✅ AI Studio injection OK (method: ${result.via})`);
     await this.page.waitForTimeout(300);
@@ -363,100 +403,68 @@ class GeminiDriver {
           const st = window.getComputedStyle(el);
           return st.display !== 'none' && st.visibility !== 'hidden' && st.opacity !== '0';
         };
-        const cleanModelText = (txt) => {
-          let t = txt || '';
-          const marker = 'Expand to view model thoughts';
-          const idx = t.indexOf(marker);
-          if (idx >= 0) t = t.slice(idx + marker.length);
-          t = t.replace(/^Model\s*(•|·)?[^\n]*\n/, '');
-          return t.trim();
-        };
-        
-        const modelHeaders = Array.from(document.querySelectorAll('*')).filter(el =>
-          el.children.length === 0 && (el.textContent || '').trim() === 'Model'
-        );
-        const scopeRoot = modelHeaders.length ? modelHeaders[modelHeaders.length - 1] : null;
-        const inScope = (el) => {
-          if (!scopeRoot) return true;
-          if (el === scopeRoot || el.contains(scopeRoot) || scopeRoot.contains(el)) return true;
-          return (scopeRoot.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
-        };
-        
-        const runBtn = document.querySelector('ms-run-button');
-        const runText = runBtn ? (runBtn.innerText || runBtn.textContent || '').trim() : '';
-        const stopBtn = Array.from(document.querySelectorAll('ms-stop-button, button[aria-label*="Stop" i]')).find(visible);
-        const runSpinner = runBtn ? Array.from(runBtn.querySelectorAll('mat-spinner, [class*="spinner"]')).find(visible) : null;
-        let stopVisible = !!stopBtn || !!runSpinner || /(^|\b)stop\b/i.test(runText);
-        
-        const elapsedChip = Array.from(document.querySelectorAll('span, div, time')).find(el =>
-          el.children.length === 0 && /^\d+(\.\d+)?\s?s$/i.test((el.textContent || '').trim()) && inScope(el)
-        );
-        const thumbsBtn = Array.from(document.querySelectorAll(
-          'button[aria-label*="Good response" i], button[aria-label*="Bad response" i], button[aria-label*="Thumb" i]'
-        )).find(el => visible(el) && inScope(el));
-        const finishedMarker = !!elapsedChip || !!thumbsBtn;
-        if (finishedMarker) stopVisible = false;
-        
-        let bodyText = '';
-        const preEls = Array.from(document.querySelectorAll('pre')).filter(p => inScope(p) && (p.innerText || '').trim().length > 5);
-        if (preEls.length) {
-          const preText = (preEls[preEls.length - 1].innerText || '').trim();
-          if (preText.length > 20 || preText.includes('{') || preText.includes('```')) {
-            bodyText = preText;
-          }
-        }
-        const turnSelectors = ['ms-model-message', 'model-response', '[data-test-id="model-response"]', '.model-response', 'ms-chat-message', '[class*="model-message"]', '[class*="conversation-turn"]'];
-        if (!bodyText) for (const sel of turnSelectors) {
-          const els = Array.from(document.querySelectorAll(sel)).filter(inScope);
-          if (els.length) {
-            const last = els[els.length - 1];
-            const clone = last.cloneNode(true);
-            clone.querySelectorAll('button, [class*="thought"], ms-thoughts, [class*="actions"], [class*="feedback"]').forEach(j => j.remove());
-            bodyText = cleanModelText(clone.innerText || clone.textContent || '');
-            break;
-          }
-        }
-        if (!bodyText) {
-          const mds = Array.from(document.querySelectorAll('ms-markdown, .markdown, [class*="markdown"]')).filter(inScope);
-          if (mds.length) bodyText = cleanModelText(mds[mds.length - 1].innerText || mds[mds.length - 1].textContent || '');
-        }
-        if (!bodyText) {
-          
-          const pres = Array.from(document.querySelectorAll('pre')).filter(p => inScope(p) && (p.innerText || '').trim().length > 5);
-          if (pres.length) bodyText = (pres[pres.length - 1].innerText || '').trim();
-        }
-        if (!bodyText) {
-          const bodies = Array.from(document.querySelectorAll('.mat-expansion-panel-body'))
-            .filter(b => inScope(b) && (b.innerText || '').trim().length > 5);
-          if (bodies.length) bodyText = (bodies[bodies.length - 1].innerText || '').trim();
-        }
-        if (!bodyText && scopeRoot) {
-          let turn = scopeRoot;
-          for (let up = 0; up < 8 && turn; up++) {
-            turn = turn.parentElement;
-            if (turn && (turn.innerText || '').length > 40) break;
-          }
-          if (turn) bodyText = cleanModelText(turn.innerText || '');
-        }
-        
-        const errorEl = Array.from(document.querySelectorAll(
-          '.model-error, [class*="model-error"], ms-model-error, [class*="turn-error"], [class*="error-banner"]'
-        )).filter(el => visible(el) && inScope(el)).pop();
-        const errorText = errorEl ? (errorEl.innerText || errorEl.textContent || '').trim() : '';
-        if (errorText && !bodyText) bodyText = errorText;
+        const norm = (s) => (s || '').replace(/\u00a0/g, ' ').trim();
 
-        
-        const RATE_RE = /reached your rate limit|please try again later|rate limit[^\n]*try again|reached your quota|quota for the day|wait for it to reset|upgrade to go further|too many requests|resource.{0,12}exhausted|\b429\b/i;
-        let rateLimit = RATE_RE.test(errorText || '') || RATE_RE.test(bodyText || '');
-        if (!rateLimit && scopeRoot) {
-          let turn = scopeRoot;
-          for (let up = 0; up < 8 && turn; up++) {
-            turn = turn.parentElement;
-            if (turn && (turn.innerText || '').length > 20) break;
-          }
-          if (turn) rateLimit = RATE_RE.test(turn.innerText || '');
+        // 1) All model turns in DOM order (virtual-scroll aware)
+        const allTurns = Array.from(document.querySelectorAll('ms-chat-turn'));
+        const modelTurns = allTurns.filter(t => t.querySelector('.chat-turn-container.model'));
+        const turnIds = modelTurns.map(t => t.id || '');
+        const lastTurn = modelTurns.length ? modelTurns[modelTurns.length - 1] : null;
+        const lastTurnId = lastTurn ? (lastTurn.id || '') : '';
+
+        // 2) Run/Stop button state (global)
+        const runBtn = document.querySelector('ms-run-button button') || document.querySelector('ms-run-button');
+        const runText = runBtn ? norm(runBtn.innerText || runBtn.textContent || '') : '';
+        const stoppable = !!(runBtn && (
+          runBtn.classList.contains('stoppable') ||
+          runBtn.querySelector('[class*="stoppable"]')
+        ));
+        const legacyStop = Array.from(document.querySelectorAll('ms-stop-button, button[aria-label*="Stop" i]')).find(visible);
+        let stopVisible = stoppable || !!legacyStop || /\bstop\b/i.test(runText);
+
+        // 3) Finished marker ONLY inside the LAST model turn (not old turns)
+        let finishedMarker = false;
+        if (lastTurn) {
+          finishedMarker = !!lastTurn.querySelector(
+            '.turn-footer button[aria-label="Good response"], .turn-footer button[aria-label="Bad response"], button.response-feedback-button'
+          );
         }
-        return { bodyText, stopVisible, finishedMarker, rateLimit, errorText };
+        if (finishedMarker && !stoppable && !legacyStop) stopVisible = false;
+
+        // 4) Body text ONLY from the last model turn
+        let bodyText = '';
+        if (lastTurn) {
+          const pres = Array.from(lastTurn.querySelectorAll('ms-code-block pre, pre'))
+            .filter(p => norm(p.innerText || p.textContent || '').length > 0);
+          const isThoughtTurn = lastTurn.classList.contains('thought-activity-host');
+          if (pres.length) {
+            bodyText = norm(pres[pres.length - 1].innerText || pres[pres.length - 1].textContent || '');
+          } else if (!isThoughtTurn) {
+            const clone = lastTurn.cloneNode(true);
+            clone.querySelectorAll('.author-label, .actions-container, .turn-footer, button, .timestamp, .model-run-time-pill, ms-thoughts, [class*="thought"]').forEach(n => n.remove());
+            bodyText = norm(clone.innerText || clone.textContent || '');
+          }
+        }
+
+        // 5) Error / rate-limit (last turn + global banners)
+        const PLAIN_TURN_RATE_RE = /you(?:'ve| have) reached your (?:rate |usage )?limit|you(?:'ve| have) reached (?:the|your) (?:current )?(?:usage|daily) (?:cap|quota|limit)|quota for the day|wait for it to reset|upgrade to go further|too many requests[\s,!.]+please try again later|resource has been exhausted/i;
+        const BANNER_RATE_RE = /reached your rate limit|please try again later|rate limit[^\n]*try again|reached your quota|quota for the day|wait for it to reset|upgrade to go further|too many requests|resource.{0,12}exhausted|(?:http|status|code|error)[^0-9\n]{0,12}429\b|\b429\s*(?:too many requests|rate limit)/i;
+        let errorText = '';
+        if (lastTurn) {
+          const errEl = lastTurn.querySelector('.model-error, [class*="model-error"], ms-model-error, [class*="turn-error"]');
+          if (errEl && visible(errEl) && !errEl.closest('pre, code, ms-code-block')) errorText = norm(errEl.innerText || errEl.textContent || '');
+        }
+        const banner = Array.from(document.querySelectorAll('ms-global-banner .message-section, [class*="error-banner"], [role="alert"]'))
+          .filter(el => visible(el) && !el.closest('ms-chat-turn, ms-code-block, pre, code'))
+          .map(el => norm(el.innerText || '')).join('\n');
+        if (banner) errorText = (errorText ? errorText + '\n' : '') + banner;
+        const hasCodeBlock = bodyText ? !!lastTurn && !!lastTurn.querySelector('ms-code-block pre, pre') : false;
+        const isActionOrCode = hasCodeBlock || /"action"\s*:/.test(bodyText);
+        const rateLimit =
+          BANNER_RATE_RE.test(errorText) ||
+          (!isActionOrCode && bodyText.length > 0 && bodyText.length <= 350 && PLAIN_TURN_RATE_RE.test(bodyText));
+
+        return { bodyText, turnIds, turnCount: modelTurns.length, lastTurnId, stopVisible, finishedMarker, rateLimit, errorText };
       });
     } catch {
       return null;
@@ -464,89 +472,92 @@ class GeminiDriver {
   }
   async waitForCompletion(onProgress, onStatus = null) {
     this.isAborted = false;
-    let lastBodyLength = 0;
-    let stableSeconds = 0;
-    let idleEmpty = 0;
-    let waitLoops = 0;
-    let sawRunning = false;
-    const initialState = await this.extractLiveState();
-    const initialText = (initialState && typeof initialState.bodyText === 'string') ? initialState.bodyText.trim() : '';
-    await this.page.waitForTimeout(1500);
+    const baseline = this._baseline || { ids: [], lastText: '', count: 0 };
+    const baseIds = new Set(baseline.ids || []);
+    let lastLen = -1, stable = 0, loops = 0, emptyNew = 0;
+    let sawRunning = false, sawNewTurn = false, lastEmitted = '';
+
     while (true) {
-      if (this.isAborted) throw new Error('Task was cancelled by user.');
-      if (!this.page || this.page.isClosed()) throw new Error('Gemini browser window was closed.');
-      await this.page.waitForTimeout(1000);
-      if (this.isAborted) throw new Error('Task was cancelled by user.');
-      waitLoops++;
+      if (this.isAborted) throw new Error(this.t('cancelled'));
+      if (!this.page || this.page.isClosed()) throw new Error(this.t('closed'));
+      await this.page.waitForTimeout(800);
+      if (this.isAborted) throw new Error(this.t('cancelled'));
+      loops++;
       const state = await this.extractLiveState();
       if (!state) continue;
-      
-      
-      if (state.rateLimit) {
-        console.warn('⚠️ Gemini rate limit / daily quota detected in AI Studio.');
-        const err = new Error('GEMINI_RATE_LIMIT');
-        err.code = 'GEMINI_RATE_LIMIT';
-        throw err;
+      if (state.rateLimit) { const e = new Error('GEMINI_RATE_LIMIT'); e.code = 'GEMINI_RATE_LIMIT'; throw e; }
+
+      const running = state.stopVisible;
+      if (running) sawRunning = true;
+
+      // New-turn detection by stable turn id (not fragile text compare)
+      let isNewTurn = false;
+      if (state.lastTurnId) {
+        isNewTurn = !baseIds.has(state.lastTurnId);
+      } else {
+        isNewTurn = state.turnCount > (baseline.count || 0) ||
+          (!!state.bodyText && state.bodyText !== (baseline.lastText || ''));
       }
-      if (state.stopVisible) {
-        sawRunning = true;
-        stableSeconds = 0;
-        idleEmpty = 0;
-        if (typeof onStatus === 'function') onStatus('Gemini (AI Studio) is thinking and writing code...');
-        
+      if (isNewTurn && (state.bodyText || '').length > 0) sawNewTurn = true;
+
+      if (running) {
+        stable = 0;
+        lastLen = (state.bodyText || '').length;
+        if (isNewTurn && state.bodyText && state.bodyText !== lastEmitted && typeof onProgress === 'function') {
+          onProgress({ text: state.bodyText });
+          lastEmitted = state.bodyText;
+        }
+        if (typeof onStatus === 'function') onStatus(this.t('thinking'));
         continue;
       }
-      const rawText = (state.bodyText || '').trim();
-      const stripStale = (t) => {
-        if (!initialText || t === initialText) return '';
-        if (t.startsWith(initialText)) return t.slice(initialText.length).trim();
-        return t;
-      };
-      const currentText = stripStale(rawText);
 
-      if (rawText.length > 5) {
-        const isNewContent = currentText.length > 0;
-        const canAccept = isNewContent || sawRunning;
-        if (!canAccept) {
-          if (waitLoops > 50 && !sawRunning) {
-            const err = new Error('NO_NEW_RESPONSE: Gemini never started a new reply for this turn.');
-            err.code = 'NO_NEW_RESPONSE';
-            throw err;
+      if (!sawNewTurn) {
+        // Thinking models can take a long time before emitting text — be generous.
+        if (loops > 240 && !sawRunning) {
+          const e = new Error('NO_NEW_RESPONSE: Gemini never started a new reply.');
+          e.code = 'NO_NEW_RESPONSE'; throw e;
+        }
+        if (loops > 420) {
+          const e = new Error('NO_NEW_RESPONSE: Gemini response could not be located.');
+          e.code = 'NO_NEW_RESPONSE'; throw e;
+        }
+        if (typeof onStatus === 'function') onStatus(this.t('preparing'));
+        continue;
+      }
+
+      const text = state.bodyText || '';
+      if (text.length > 5) {
+        emptyNew = 0;
+        if (text.length === lastLen) stable++;
+        else {
+          lastLen = text.length; stable = 0;
+          if (typeof onProgress === 'function' && text !== lastEmitted) { onProgress({ text }); lastEmitted = text; }
+        }
+        const need = state.finishedMarker ? 1 : 3;
+        if (stable >= need) {
+          await this.page.waitForTimeout(500);
+          const verify = await this.extractLiveState();
+          if (verify && !verify.stopVisible && (verify.bodyText || '') === text &&
+            (!state.lastTurnId || verify.lastTurnId === state.lastTurnId)) {
+            console.log('✅ AI Studio response finished and verified (turn-id baseline).');
+            return text;
           }
-          if (typeof onStatus === 'function') onStatus('Gemini (AI Studio) is thinking and writing code...');
+          if (verify && verify.stopVisible) sawRunning = true;
+          stable = 0;
           continue;
         }
-        if (currentText.length === lastBodyLength) {
-          stableSeconds++;
-          const need = 2; 
-          if (stableSeconds >= need) {
-            
-            await this.page.waitForTimeout(800);
-            const verifyState = await this.extractLiveState();
-            const verifiedText = stripStale((verifyState && verifyState.bodyText ? verifyState.bodyText.trim() : ''));
-            if (verifyState && !verifyState.stopVisible && verifiedText === currentText && verifiedText.length > 5) {
-              console.log('✅ AI Studio response finished and verified.');
-              return verifiedText;
-            }
-            
-            if (verifyState && verifyState.stopVisible) sawRunning = true;
-            stableSeconds = 0;
-            idleEmpty = 0;
-            continue;
-          }
-        } else {
-          lastBodyLength = currentText.length;
-          stableSeconds = 0;
-          if (onProgress) onProgress({ text: currentText });
+      } else {
+        emptyNew++;
+        stable = 0;
+        if (emptyNew > 60) {
+          if (state.errorText) throw new Error(this.t('errorPrefix', state.errorText));
+          const e = new Error('NO_NEW_RESPONSE: Gemini started a reply but no content was captured.');
+          e.code = 'NO_NEW_RESPONSE'; throw e;
         }
-        idleEmpty = 0;
-        continue;
       }
-      idleEmpty++;
-      if (typeof onStatus === 'function') onStatus('Reading Gemini response...');
-      const limit = state.finishedMarker ? 8 : 20;
-      if (idleEmpty >= limit) {
-        throw new Error('Gemini response finished but content could not be captured (AI Studio UI changed?). Please re-send your prompt.');
+      if (loops > 600) {
+        if (text.length > 5) return text;
+        throw new Error(this.t('timeout'));
       }
     }
   }
@@ -597,7 +608,7 @@ class GeminiDriver {
         };
       }).catch(() => null);
       if (st) {
-        if (st.errors > 0) throw new Error('AI Studio rejected the attached file (media chip shows an error).');
+        if (st.errors > 0) throw new Error(this.t('mediaRejected'));
         if (st.total > 0 && st.ready === st.total) {
           stable++;
           if (stable >= 2) {
@@ -639,6 +650,7 @@ class GeminiDriver {
     try {
       await this.page.goto(AI_STUDIO_NEW_CHAT, { waitUntil: 'domcontentloaded', timeout: 20000 });
       await this.page.waitForTimeout(1200);
+      this._baseline = null;
       return true;
     } catch (e) {
       console.warn('AI Studio startNewChat warning:', e.message);

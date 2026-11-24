@@ -3,6 +3,7 @@ import {
   Folder, HardDrive, ArrowUp, X, Loader2, AlertCircle, ChevronRight,
   Home, FileText, Download, Monitor, FolderOpen
 } from 'lucide-react';
+import { Language, translations } from '../../i18n/translations';
 
 interface DirEntry { name: string; path: string; isDrive?: boolean; }
 interface DirListing {
@@ -19,6 +20,7 @@ interface FolderPickerModalProps {
   onClose: () => void;
   onPick: (path: string) => void;
   browseDir: (path?: string) => Promise<DirListing>;
+  lang?: Language;
 }
 
 const SHORTCUT_ICONS: Record<string, React.ReactNode> = {
@@ -29,11 +31,20 @@ const SHORTCUT_ICONS: Record<string, React.ReactNode> = {
 };
 
 export const FolderPickerModal: React.FC<FolderPickerModalProps> = ({
-  open, notice, onClose, onPick, browseDir
+  open, notice, onClose, onPick, browseDir, lang = 'en'
 }) => {
   const [listing, setListing] = useState<DirListing | null>(null);
   const [loading, setLoading] = useState(false);
   const [pathInput, setPathInput] = useState('');
+  const t = translations[lang];
+  const isFa = lang === 'fa';
+
+  const shortcutLabel = (name: string) =>
+    name === 'Home' ? t.shortcutHome
+    : name === 'Desktop' ? t.shortcutDesktop
+    : name === 'Documents' ? t.shortcutDocuments
+    : name === 'Downloads' ? t.shortcutDownloads
+    : name;
 
   const navigate = useCallback(async (p?: string) => {
     setLoading(true);
@@ -80,12 +91,15 @@ export const FolderPickerModal: React.FC<FolderPickerModalProps> = ({
         display: 'flex', alignItems: 'center', justifyContent: 'center'
       }}
     >
-      <div style={{
-        width: 560, maxWidth: '94vw', maxHeight: '86vh',
-        background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)',
-        borderRadius: 14, boxShadow: '0 24px 60px var(--shadow-heavy)',
-        display: 'flex', flexDirection: 'column', overflow: 'hidden'
-      }}>
+      <div
+        dir={isFa ? 'rtl' : 'ltr'}
+        style={{
+          width: 560, maxWidth: '94vw', maxHeight: '86vh',
+          background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)',
+          borderRadius: 14, boxShadow: '0 24px 60px var(--shadow-heavy)',
+          display: 'flex', flexDirection: 'column', overflow: 'hidden'
+        }}
+      >
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', borderBottom: '1px solid var(--border-subtle)', flexShrink: 0 }}>
           <div style={{
@@ -96,10 +110,10 @@ export const FolderPickerModal: React.FC<FolderPickerModalProps> = ({
             <FolderOpen size={15} />
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-main)' }}>Open Folder</div>
-            <div style={{ fontSize: 10.5, color: 'var(--text-dim)' }}>In-app picker — works on every system</div>
+            <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-main)' }}>{t.folderPickerTitle}</div>
+            <div style={{ fontSize: 10.5, color: 'var(--text-dim)' }}>{t.folderPickerSubtitle}</div>
           </div>
-          <button onClick={onClose} style={{ ...btn, border: 'none' }} title="Close (Esc)"><X size={15} /></button>
+          <button onClick={onClose} style={{ ...btn, border: 'none' }} title={t.closeEscTip}><X size={15} /></button>
         </div>
 
         {notice && (
@@ -119,19 +133,19 @@ export const FolderPickerModal: React.FC<FolderPickerModalProps> = ({
           <button
             onClick={() => navigate(listing?.parent ?? '')}
             disabled={loading}
-            title={atRoots ? 'Drives' : 'Up one level'}
+            title={atRoots ? t.thisPcDrivesTip : t.upOneLevelTip}
             style={{ ...btn, opacity: loading ? 0.5 : 1 }}
           >
             <ArrowUp size={14} />
           </button>
-          <button onClick={() => navigate('')} disabled={loading} title="This PC / Drives" style={{ ...btn, opacity: loading ? 0.5 : 1 }}>
+          <button onClick={() => navigate('')} disabled={loading} title={t.thisPcDrivesTip} style={{ ...btn, opacity: loading ? 0.5 : 1 }}>
             <HardDrive size={14} />
           </button>
           <input
             value={pathInput}
             onChange={(e) => setPathInput(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && pathInput.trim()) navigate(pathInput.trim()); }}
-            placeholder="Type a full path and press Enter…"
+            placeholder={t.typePathPlaceholder}
             dir="ltr"
             className="code-font"
             style={{
@@ -157,7 +171,7 @@ export const FolderPickerModal: React.FC<FolderPickerModalProps> = ({
                 }}
               >
                 {SHORTCUT_ICONS[s.name] || <Folder size={12} />}
-                {s.name}
+                {shortcutLabel(s.name)}
               </button>
             ))}
           </div>
@@ -178,7 +192,7 @@ export const FolderPickerModal: React.FC<FolderPickerModalProps> = ({
           )}
           {!loading && !listing?.error && entries.length === 0 && (
             <div style={{ padding: '18px 14px', textAlign: 'center', color: 'var(--text-dim)', fontSize: 12 }}>
-              {atRoots ? 'No drives detected.' : 'No subfolders here — you can open this folder.'}
+              {atRoots ? t.noDrivesDetected : t.noSubfolders}
             </div>
           )}
           {!loading && entries.map(e => (
@@ -199,7 +213,7 @@ export const FolderPickerModal: React.FC<FolderPickerModalProps> = ({
               <span className="code-font" dir="ltr" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {e.name}
               </span>
-              <ChevronRight size={13} color="var(--text-dim)" style={{ flexShrink: 0 }} />
+              <ChevronRight size={13} color="var(--text-dim)" style={{ flexShrink: 0, transform: isFa ? 'rotate(180deg)' : 'none' }} />
             </div>
           ))}
         </div>
@@ -207,14 +221,14 @@ export const FolderPickerModal: React.FC<FolderPickerModalProps> = ({
         {/* Footer */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 16px', flexShrink: 0 }}>
           <span className="code-font" dir="ltr" style={{ flex: 1, minWidth: 0, fontSize: 10.5, color: 'var(--text-dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {listing?.path || 'This PC'}
+            {listing?.path || t.thisPc}
           </span>
           <button
             onClick={onClose}
             className="hover-bright"
             style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid var(--border-subtle)', color: 'var(--text-main)', padding: '7px 16px', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
           >
-            Cancel
+            {t.cancel}
           </button>
           <button
             onClick={() => canOpen && onPick(listing!.path)}
@@ -229,7 +243,7 @@ export const FolderPickerModal: React.FC<FolderPickerModalProps> = ({
             }}
           >
             <FolderOpen size={13} />
-            Open this folder
+            {t.openThisFolder}
           </button>
         </div>
       </div>

@@ -249,7 +249,7 @@ class SessionStore {
     if (!meta) return null;
     const payload = { ...message };
     if (typeof payload.ts !== 'number') payload.ts = Date.now();
-    const MAX_STORED_TEXT = 70000; // must be greater than the input cap (65000)
+    const MAX_STORED_TEXT = 260000; // must be greater than the highest input cap (250000)
     if (typeof payload.text === 'string' && payload.text.length > MAX_STORED_TEXT) {
       payload.text = payload.text.slice(0, MAX_STORED_TEXT) + '\n... [truncated for storage]';
     }

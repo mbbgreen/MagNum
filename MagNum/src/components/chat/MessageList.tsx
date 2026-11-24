@@ -4,6 +4,7 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  ChevronLeft,
   ChevronsLeft,
   ChevronsRight,
   Copy,
@@ -46,15 +47,15 @@ function isSuccessfulPatchReport(m: ChatMessage): boolean {
 
 interface ToolInfo { kind: 'read' | 'search' | 'patch' | 'create' | 'command' | 'continue'; label: string; meta?: string; }
 function escapeRe(s: string) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
-function getToolInfo(m: ChatMessage, t: any): ToolInfo | null {
+function getToolInfo(m: ChatMessage, t: any, lang: Language = 'en'): ToolInfo | null {
   switch (m.action) {
     case 'read_files':
     case 'read_file': {
       const files = Array.isArray(m.files) && m.files.length ? m.files : [];
       const meta = files.map(f => {
         const rm = m.text.match(new RegExp('`' + escapeRe(f) + '`\\s*\\(([^)]+)\\)'));
-        return rm ? `${f} ${rm[1]}` : f;
-      }).join(', ');
+        return rm ? `\u2066${f}\u2069 \u200F(${rm[1]})\u200F` : `\u2066${f}\u2069`;
+      }).join(lang === 'fa' ? '، ' : ', ');
       return { kind: 'read', label: t.toolRead, meta: meta || undefined };
     }
     case 'continue_reading':
@@ -113,6 +114,7 @@ interface MessageListProps {
   isRunning?: boolean;
   animateId?: string | null;
   networkRetry?: { attempt: number; max: number } | null;
+  captchaRequired?: string | null;
   sessionId?: string | null;
   inputBar?: React.ReactNode;
 }
@@ -130,12 +132,7 @@ const headerBtn: React.CSSProperties = {
   cursor: 'pointer'
 };
 
-const RAIL_TABS: { key: Exclude<RightPanelTab, null>; label: string; icon: React.ReactNode }[] = [
-  { key: 'changes', label: 'Changes', icon: <Diff size={13} /> },
-  { key: 'browser', label: 'Browser', icon: <Globe size={13} /> },
-  { key: 'terminal', label: 'powershell', icon: <Terminal size={13} /> },
-  { key: 'files', label: 'Files', icon: <FileText size={13} /> }
-];
+
 
 const AnimatedMarkdown: React.FC<{ content: string }> = ({ content }) => {
   const total = content.length;
@@ -185,10 +182,18 @@ export const MessageList: React.FC<MessageListProps> = ({
   isRunning = false,
   animateId = null,
   networkRetry = null,
+  captchaRequired = null,
   sessionId = null,
   inputBar
 }) => {
   const t = translations[lang];
+  const isFa = lang === 'fa';
+  const railTabs: { key: Exclude<RightPanelTab, null>; label: string; icon: React.ReactNode }[] = [
+    { key: 'changes', label: t.tabChanges, icon: <Diff size={13} /> },
+    { key: 'browser', label: t.tabBrowser, icon: <Globe size={13} /> },
+    { key: 'terminal', label: t.tabTerminal, icon: <Terminal size={13} /> },
+    { key: 'files', label: t.tabFiles, icon: <FileText size={13} /> }
+  ];
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [showScrollBottom, setShowScrollBottom] = useState(false);
   const [openThoughts, setOpenThoughts] = useState<Record<string, boolean>>({});
@@ -270,7 +275,7 @@ export const MessageList: React.FC<MessageListProps> = ({
       <div style={{ height: 44, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 14px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {!isSidebarOpen && (
-            <Tooltip content="Show Sidebar" shortcut="Ctrl+B" position="bottom">
+            <Tooltip content={t.showSidebar} shortcut="Ctrl+B" position="bottom">
               <button
                 className="hover-bright"
                 onClick={onToggleSidebar}
@@ -283,13 +288,13 @@ export const MessageList: React.FC<MessageListProps> = ({
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 8, padding: '4px 10px', maxWidth: 360, minWidth: 0 }}>
             <MessageSquare size={12} color="var(--text-dim)" style={{ flexShrink: 0 }} />
             <span dir="auto" style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {sessionTitle || 'Conversation'}
+              {sessionTitle || t.conversation}
             </span>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           {activeRightTab === null && (
-            <Tooltip content="Open Panel" shortcut="Ctrl Alt B" position="bottom">
+            <Tooltip content={t.openPanel} shortcut="Ctrl Alt B" position="bottom">
               <button
                 className="hover-bright"
                 onClick={() => {
@@ -298,18 +303,6 @@ export const MessageList: React.FC<MessageListProps> = ({
                 style={{ ...headerBtn, color: 'var(--text-dim)' }}
               >
                 <PanelRight size={14} />
-              </button>
-            </Tooltip>
-          )}
-          {activeRightTab === null && (
-            <Tooltip content={isRailExpanded ? 'Collapse Tabs Rail' : 'Expand Tabs Rail'} position="bottom">
-              <button
-                onClick={toggleRailExpand}
-                className="hover-bright"
-                style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'transparent', border: '1px solid var(--border-subtle)', borderRadius: 6, padding: '2px 7px', fontSize: 11, color: 'var(--text-muted)', cursor: 'pointer', marginLeft: 4 }}
-              >
-                <span>{isRailExpanded ? 'Collapse' : 'Expand'}</span>
-                {isRailExpanded ? <ChevronsRight size={12} /> : <ChevronsLeft size={12} />}
               </button>
             </Tooltip>
           )}
@@ -331,7 +324,7 @@ export const MessageList: React.FC<MessageListProps> = ({
                   className="hover-bright"
                   style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid var(--border-subtle)', color: 'var(--text-muted)', padding: '6px 14px', borderRadius: 6, fontSize: 12, cursor: isLoadingOlder ? 'wait' : 'pointer' }}
                 >
-                  {isLoadingOlder ? 'Loading older messages…' : 'Load older messages'}
+                  {isLoadingOlder ? t.loadingOlder : t.loadOlder}
                 </button>
               </div>
             )}
@@ -358,18 +351,18 @@ export const MessageList: React.FC<MessageListProps> = ({
                 >
                   {Array.isArray(m.attachments) && m.attachments.length > 0 && (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: cleanText ? 8 : 0 }}>
-                      <AttachmentPreview attachments={m.attachments} variant="message" />
+                      <AttachmentPreview attachments={m.attachments} variant="message" lang={lang} />
                     </div>
                   )}
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap', minWidth: 0, width: '100%' }}>
-                    {skillId && <SkillChip id={skillId} size="sm" />}
+                    {skillId && <SkillChip id={skillId} size="sm" lang={lang} />}
                     {cleanText && <span style={{ whiteSpace: 'pre-wrap', flex: 1, minWidth: 0, wordBreak: 'break-word', overflowWrap: 'anywhere' }}>{cleanText}</span>}
                   </div>
                   {onReRunPrompt && (
                     <button
                       className="msg-rerun hover-bright"
                       onClick={() => onReRunPrompt(cleanText, skillId)}
-                      title="Re-run prompt"
+                      title={t.rerunPrompt}
                       style={{ position: 'absolute', top: 6, insetInlineEnd: 6, background: 'transparent', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', display: 'flex', padding: 4, borderRadius: 4 }}
                     >
                       <RotateCcw size={12} />
@@ -381,11 +374,12 @@ export const MessageList: React.FC<MessageListProps> = ({
                   {m.thought && (
                     <div>
                       <button
+                        dir={isFa ? 'rtl' : 'ltr'}
                         onClick={() => setOpenThoughts(s => ({ ...s, [m.id]: !s[m.id] }))}
                         style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'transparent', border: 'none', color: 'var(--text-dim)', fontSize: 12, cursor: 'pointer', padding: 0 }}
                       >
-                        {openThoughts[m.id] ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                        <span style={{ fontWeight: 500 }}>Thought</span>
+                        {openThoughts[m.id] ? <ChevronDown size={12} /> : (isFa ? <ChevronLeft size={12} /> : <ChevronRight size={12} />)}
+                        <span style={{ fontWeight: 500 }}>{t.thoughtLabel}</span>
                       </button>
                       {openThoughts[m.id] && (
                         <div
@@ -398,7 +392,7 @@ export const MessageList: React.FC<MessageListProps> = ({
                     </div>
                   )}
                   {(() => {
-                    const info = getToolInfo(m, t);
+                    const info = getToolInfo(m, t, lang);
                     if (!info) {
                       const shouldAnimate = m.id === animateId && (Date.now() - (m.ts || 0)) < 5000;
                       return (
@@ -411,14 +405,15 @@ export const MessageList: React.FC<MessageListProps> = ({
                     return (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                         <button
+                          dir={isFa ? 'rtl' : 'ltr'}
                           onClick={() => hasDetail && setOpenTools(s => ({ ...s, [m.id]: !s[m.id] }))}
-                          style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: 'none', color: 'var(--text-dim)', fontSize: 12.5, cursor: hasDetail ? 'pointer' : 'default', padding: 0, minWidth: 0 }}
+                          style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: 'none', color: 'var(--text-dim)', fontSize: 12.5, cursor: hasDetail ? 'pointer' : 'default', padding: 0, minWidth: 0, textAlign: 'start' }}
                         >
-                          {hasDetail ? (openTools[m.id] ? <ChevronDown size={12} /> : <ChevronRight size={12} />) : <span style={{ width: 12 }} />}
+                          {hasDetail ? (openTools[m.id] ? <ChevronDown size={12} /> : (isFa ? <ChevronLeft size={12} /> : <ChevronRight size={12} />)) : <span style={{ width: 12 }} />}
                           <AgentIcon kind={ACTION_TO_ICON[m.action || ''] || 'think'} color="var(--text-dim)" size={13} />
                           <span style={{ fontWeight: 500, flexShrink: 0 }}>{info.label}</span>
                           {info.meta && (
-                            <span className="code-font" style={{ color: 'var(--text-dim)', opacity: 0.9, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 460 }}>
+                            <span dir={info.kind === 'read' ? 'auto' : 'ltr'} className="code-font" style={{ color: 'var(--text-dim)', opacity: 0.9, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 460 }}>
                               {info.meta}
                             </span>
                           )}
@@ -430,13 +425,13 @@ export const MessageList: React.FC<MessageListProps> = ({
                         )}
                         {info.kind === 'patch' && Array.isArray(m.edits) && m.edits.length > 0 && (
                           <div style={{ marginLeft: 17 }}>
-                            <EditSummaryRows edits={m.edits} details={editDetails} onRequestIds={onRequestEditsIds} label={t.edited} editsWord={t.editsWord} />
+                            <EditSummaryRows edits={m.edits} details={editDetails} onRequestIds={onRequestEditsIds} label={t.edited} editsWord={t.editsWord} lang={lang} />
                           </div>
                         )}
                       </div>
                     );
                   })()}
-                  {!getToolInfo(m, t) && (
+                  {!getToolInfo(m, t, lang) && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 6, color: 'var(--text-dim)' }}>
                       <ThumbsUp size={13} className="hover-bright" style={{ cursor: 'pointer' }} />
                       <ThumbsDown size={13} className="hover-bright" style={{ cursor: 'pointer' }} />
@@ -447,12 +442,12 @@ export const MessageList: React.FC<MessageListProps> = ({
                         <button onClick={() => {
                           const lu = lastUserMsgBefore(idx);
                           if (lu) onReRunPrompt(stripSkillPrefix(lu.text), lu.skill || detectSkillInText(lu.text));
-                        }} className="hover-bright" title="Regenerate" style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', display: 'flex', padding: 2 }}>
+                        }} className="hover-bright" title={t.regenerate} style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', display: 'flex', padding: 2 }}>
                           <RotateCcw size={13} />
                         </button>
                       )}
                       <span style={{ fontSize: 11.5, color: 'var(--text-dim)', marginLeft: 4 }}>
-                        {formatRelativeAgo(m.ts) || m.timestamp || ''}
+                        {formatRelativeAgo(m.ts, lang) || m.timestamp || ''}
                       </span>
                     </div>
                   )}
@@ -461,10 +456,10 @@ export const MessageList: React.FC<MessageListProps> = ({
             })}
             {(isRunning || streamingState) && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-muted)' }}>
+                <div dir={isFa ? 'rtl' : 'ltr'} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-muted)' }}>
                   <Loader2 size={13} style={{ animation: 'magnumSpin 1s linear infinite', color: 'var(--accent-green)', flexShrink: 0 }} />
                   <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>
-                    {t.workingFor} {formatDuration(runSeconds)}
+                    {t.workingFor} {formatDuration(runSeconds, lang)}
                   </span>
                   {agentStatus && (
                     <>
@@ -474,9 +469,15 @@ export const MessageList: React.FC<MessageListProps> = ({
                   )}
                 </div>
             {networkRetry && (
-              <div dir="auto" style={{ display: 'flex', gap: 7, alignItems: 'center', color: 'var(--warn-text)', fontSize: 12, marginLeft: 21 }}>
+              <div dir={isFa ? 'rtl' : 'ltr'} style={{ display: 'flex', gap: 7, alignItems: 'center', color: 'var(--warn-text)', fontSize: 12, marginInlineStart: 21 }}>
                 <AgentIcon kind="warn" color="var(--warn-text)" size={13} />
-                <span style={{ fontWeight: 600 }}>{t.networkRetryWarn} ({networkRetry.attempt}/{networkRetry.max})</span>
+                <span style={{ fontWeight: 600 }}>{t.networkRetryWarn} (\u200F{networkRetry.attempt}/{networkRetry.max}\u200F)</span>
+              </div>
+            )}
+            {captchaRequired !== null && (
+              <div dir={isFa ? 'rtl' : 'ltr'} style={{ display: 'flex', gap: 7, alignItems: 'center', color: 'var(--warn-text)', fontSize: 12, marginInlineStart: 21 }}>
+                <AgentIcon kind="warn" color="var(--warn-text)" size={13} />
+                <span style={{ fontWeight: 600 }}>{captchaRequired || t.captchaRequiredWarn}</span>
               </div>
             )}
                 {streamingState?.thought && !streamingState?.text && (
@@ -501,7 +502,7 @@ export const MessageList: React.FC<MessageListProps> = ({
         {showScrollBottom && (
           <button
             onClick={() => scrollToBottom('smooth')}
-            title="پرش به انتهای چت"
+            title={t.jumpToBottomTip}
             className="hover-bright"
             style={{ position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)', width: 32, height: 32, borderRadius: '50%', background: 'var(--accent-green)', border: 'none', color: 'var(--on-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 6px 18px var(--shadow-heavy)', zIndex: 20 }}
           >
@@ -529,46 +530,59 @@ export const MessageList: React.FC<MessageListProps> = ({
             overflowY: 'auto',
             overflowX: 'hidden'
           }}>
-            {openTabs.length > 0 && (
-              isRailExpanded ? (
-                <div style={{ padding: '8px 8px 4px' }}>
-                  <span style={{ fontSize: 10.5, color: 'var(--text-dim)', fontWeight: 700, padding: '0 4px', display: 'block', marginBottom: 4 }}>Open Tabs</span>
-                  {openTabs.map(k => {
-                    const def = RAIL_TABS.find(r => r.key === k);
-                    if (!def) return null;
-                    return (
-                      <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 3, marginBottom: 2 }}>
-                        <button onClick={() => onOpenRightTab(k)} className="hover-bright" style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 7, background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: 11.5, padding: '4px 6px', borderRadius: 6, cursor: 'pointer' }}>
-                          {def.icon}
-                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{def.label}</span>
-                        </button>
-                        <button onClick={() => onCloseTab && onCloseTab(k)} className="hover-bright" style={{ background: 'transparent', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', padding: 2, display: 'flex' }}>✕</button>
-                      </div>
-                    );
-                  })}
-                  <div style={{ height: 1, background: 'var(--border-subtle)', margin: '6px 0' }} />
-                </div>
-              ) : (
-                <div style={{ padding: '8px 0 4px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                  {openTabs.map(k => {
-                    const def = RAIL_TABS.find(r => r.key === k);
-                    if (!def) return null;
-                    return (
-                      <Tooltip key={k} content={def.label} position="left">
-                        <button onClick={() => onOpenRightTab(k)} className="hover-bright" style={{ width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', color: 'var(--text-muted)', borderRadius: 6, cursor: 'pointer' }}>
-                          {def.icon}
+            {isRailExpanded ? (
+              <div style={{ padding: '8px 8px 8px', display: 'flex', flexDirection: 'column' }}>
+                {openTabs.length > 0 && (
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4, padding: '0 4px', marginBottom: 4 }}>
+                      <span style={{ fontSize: 10.5, color: 'var(--text-dim)', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+                        {t.openTabs}
+                      </span>
+                      <Tooltip content={t.collapse} position="left">
+                        <button
+                          onClick={toggleRailExpand}
+                          className="hover-bright"
+                          style={{ width: 24, height: 24, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', color: 'var(--text-dim)', borderRadius: 6, cursor: 'pointer' }}
+                        >
+                          <ChevronsRight size={13} />
                         </button>
                       </Tooltip>
-                    );
-                  })}
-                  <div style={{ width: 22, height: 1, background: 'var(--border-subtle)', margin: '4px 0' }} />
+                    </div>
+                    {openTabs.map(k => {
+                      const def = railTabs.find(r => r.key === k);
+                      if (!def) return null;
+                      return (
+                        <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 3, marginBottom: 2 }}>
+                          <button onClick={() => onOpenRightTab(k)} className="hover-bright" style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 7, background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: 11.5, padding: '4px 6px', borderRadius: 6, cursor: 'pointer' }}>
+                            {def.icon}
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{def.label}</span>
+                          </button>
+                          <button onClick={() => onCloseTab && onCloseTab(k)} className="hover-bright" style={{ background: 'transparent', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', padding: 2, display: 'flex' }}>✕</button>
+                        </div>
+                      );
+                    })}
+                    <div style={{ height: 1, background: 'var(--border-subtle)', margin: '6px 0' }} />
+                  </>
+                )}
+
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4, padding: '0 4px', marginBottom: 4 }}>
+                  <span title={t.onRepo(repoName)} style={{ fontSize: 10.5, color: 'var(--text-dim)', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+                    {t.onRepo(repoName)}
+                  </span>
+                  {openTabs.length === 0 && (
+                    <Tooltip content={t.collapse} position="left">
+                      <button
+                        onClick={toggleRailExpand}
+                        className="hover-bright"
+                        style={{ width: 24, height: 24, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', color: 'var(--text-dim)', borderRadius: 6, cursor: 'pointer' }}
+                      >
+                        <ChevronsRight size={13} />
+                      </button>
+                    </Tooltip>
+                  )}
                 </div>
-              )
-            )}
-            {isRailExpanded ? (
-              <div style={{ padding: '0 8px 8px' }}>
-                <span style={{ fontSize: 10.5, color: 'var(--text-dim)', fontWeight: 700, padding: '0 4px', display: 'block', marginBottom: 4 }}>On {repoName}</span>
-                {RAIL_TABS.map(tb => (
+
+                {railTabs.map(tb => (
                   <button key={tb.key} onClick={() => onOpenRightTab(tb.key)} className="hover-bright" style={{ display: 'flex', alignItems: 'center', gap: 7, width: '100%', background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: 11.5, padding: '5px 6px', borderRadius: 6, cursor: 'pointer', marginBottom: 2 }}>
                     {tb.icon}
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tb.label}</span>
@@ -576,8 +590,35 @@ export const MessageList: React.FC<MessageListProps> = ({
                 ))}
               </div>
             ) : (
-              <div style={{ padding: '0 0 8px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                {RAIL_TABS.map(tb => (
+              <div style={{ padding: '8px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                <Tooltip content={t.expand} position="left">
+                  <button
+                    onClick={toggleRailExpand}
+                    className="hover-bright"
+                    style={{ width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', color: 'var(--text-muted)', borderRadius: 6, cursor: 'pointer' }}
+                  >
+                    <ChevronsLeft size={13} />
+                  </button>
+                </Tooltip>
+
+                {openTabs.length > 0 && (
+                  <>
+                    {openTabs.map(k => {
+                      const def = railTabs.find(r => r.key === k);
+                      if (!def) return null;
+                      return (
+                        <Tooltip key={k} content={def.label} position="left">
+                          <button onClick={() => onOpenRightTab(k)} className="hover-bright" style={{ width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', color: 'var(--text-muted)', borderRadius: 6, cursor: 'pointer' }}>
+                            {def.icon}
+                          </button>
+                        </Tooltip>
+                      );
+                    })}
+                    <div style={{ width: 22, height: 1, background: 'var(--border-subtle)', margin: '4px 0' }} />
+                  </>
+                )}
+
+                {railTabs.map(tb => (
                   <Tooltip key={tb.key} content={tb.label} position="left">
                     <button onClick={() => onOpenRightTab(tb.key)} className="hover-bright" style={{ width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', color: 'var(--text-muted)', borderRadius: 6, cursor: 'pointer' }}>
                       {tb.icon}

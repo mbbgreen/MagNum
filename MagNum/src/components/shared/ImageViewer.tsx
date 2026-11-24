@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { X, ZoomIn, ZoomOut, Copy, Download, Check, ChevronLeft, ChevronRight, Maximize, Loader2, AlertCircle } from 'lucide-react';
+import { Language, translations } from '../../i18n/translations';
 
 export interface ViewerImage { src: string; name: string; }
 interface ViewerState { images: ViewerImage[]; index: number; }
@@ -44,7 +45,7 @@ const btn: React.CSSProperties = {
   display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, flexShrink: 0
 };
 
-export const ImageViewerHost: React.FC = () => {
+export const ImageViewerHost: React.FC<{ lang?: Language }> = ({ lang = 'en' }) => {
   const [viewer, setViewer] = useState<ViewerState | null>(current);
   const [zoom, setZoom] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
@@ -54,6 +55,7 @@ export const ImageViewerHost: React.FC = () => {
   const [dragging, setDragging] = useState(false);
   const stageRef = useRef<HTMLDivElement>(null);
   const drag = useRef({ active: false, x: 0, y: 0, moved: false });
+  const t = translations[lang];
 
   useEffect(() => { listeners.add(setViewer); return () => { listeners.delete(setViewer); }; }, []);
 
@@ -138,7 +140,7 @@ export const ImageViewerHost: React.FC = () => {
         background: 'var(--bg-popover)'
       }}>
         <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text-main)', whiteSpace: 'nowrap' }}>
-          Attached image {viewer.index + 1}
+          {t.attachedImageTitle(viewer.index + 1)}
         </span>
         <span className="code-font" title={img.name} style={{ fontSize: 11, color: 'var(--text-dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 260 }}>
           {img.name}
@@ -149,19 +151,19 @@ export const ImageViewerHost: React.FC = () => {
             {viewer.index + 1}/{viewer.images.length}
           </span>
         )}
-        <button className="hover-bright" style={btn} title="Zoom out (-)" onClick={() => setZoom(z => clampZoom(z / 1.25))}><ZoomOut size={15} /></button>
+        <button className="hover-bright" style={btn} title={t.zoomOutTip} onClick={() => setZoom(z => clampZoom(z / 1.25))}><ZoomOut size={15} /></button>
         <span className="code-font" style={{ fontSize: 11, color: 'var(--text-muted)', width: 44, textAlign: 'center', userSelect: 'none' }}>
           {Math.round(zoom * 100)}%
         </span>
-        <button className="hover-bright" style={btn} title="Zoom in (+)" onClick={() => setZoom(z => clampZoom(z * 1.25))}><ZoomIn size={15} /></button>
-        <button className="hover-bright" style={btn} title="Reset view (0)" onClick={resetView}><Maximize size={14} /></button>
+        <button className="hover-bright" style={btn} title={t.zoomInTip} onClick={() => setZoom(z => clampZoom(z * 1.25))}><ZoomIn size={15} /></button>
+        <button className="hover-bright" style={btn} title={t.resetViewTip} onClick={resetView}><Maximize size={14} /></button>
         <div style={{ width: 1, height: 18, background: 'var(--border-subtle)', margin: '0 2px' }} />
         <button className="hover-bright" style={{ ...btn, color: copyState === 'ok' ? 'var(--accent-green)' : copyState === 'err' ? 'var(--diff-del-text)' : 'var(--text-muted)' }}
-          title={copyState === 'ok' ? 'Copied!' : copyState === 'err' ? 'Copy failed' : 'Copy image'} onClick={doCopy}>
+          title={copyState === 'ok' ? t.copiedTip : copyState === 'err' ? t.copyFailedTip : t.copyImageTip} onClick={doCopy}>
           {copyState === 'ok' ? <Check size={15} /> : <Copy size={14} />}
         </button>
-        <button className="hover-bright" style={btn} title="Download" onClick={() => downloadImage(src, img.name).catch(() => {})}><Download size={15} /></button>
-        <button className="hover-bright" style={{ ...btn, color: 'var(--text-main)' }} title="Close (Esc)" onClick={closeImageViewer}><X size={16} /></button>
+        <button className="hover-bright" style={btn} title={t.downloadTip} onClick={() => downloadImage(src, img.name).catch(() => {})}><Download size={15} /></button>
+        <button className="hover-bright" style={{ ...btn, color: 'var(--text-main)' }} title={t.closeEscTip} onClick={closeImageViewer}><X size={16} /></button>
       </div>
 
       {/* Stage */}
@@ -180,7 +182,7 @@ export const ImageViewerHost: React.FC = () => {
         {!loaded && !failed && <Loader2 size={26} color="var(--accent-green)" style={{ animation: 'magnumSpin 1s linear infinite', position: 'absolute' }} />}
         {failed && (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, color: 'var(--diff-del-text)', fontSize: 12.5 }}>
-            <AlertCircle size={24} /> Failed to load image
+            <AlertCircle size={24} /> {t.failedLoadImage}
           </div>
         )}
         <img
@@ -211,8 +213,8 @@ export const ImageViewerHost: React.FC = () => {
         )}
       </div>
 
-      <div style={{ flexShrink: 0, textAlign: 'center', padding: '8px 0 12px', fontSize: 10.5, color: 'var(--text-dim)', userSelect: 'none' }}>
-        Scroll to zoom · Drag to pan · Double-click to toggle · Esc to close
+      <div dir={lang === 'fa' ? 'rtl' : 'ltr'} style={{ flexShrink: 0, textAlign: 'center', padding: '8px 0 12px', fontSize: 10.5, color: 'var(--text-dim)', userSelect: 'none' }}>
+        {t.imageViewerHint}
       </div>
     </div>
   );

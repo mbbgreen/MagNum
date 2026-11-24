@@ -1,6 +1,6 @@
 [package]
 name = "magnum-installer"
-version = "0.2.0"
+version = "0.2.1"
 description = "MagNum installer"
 authors = ["Nethers Games"]
 edition = "2021"

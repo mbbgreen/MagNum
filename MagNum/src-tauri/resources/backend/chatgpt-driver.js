@@ -37,6 +37,29 @@ const STOP_SEL = [
   'form[data-chatgpt-composer] button[aria-label*="stop" i]'
 ].join(', ');
 
+const CHATGPT_MSG = {
+  en: {
+    closed: 'ChatGPT session was closed. Please reconnect.',
+    notReady: 'ChatGPT is not ready to receive messages yet. If a sign-in window is open, please sign in first.',
+    sendFailed: 'Could not send message to ChatGPT. Please start a new chat and try again.',
+    cancelled: 'Task was cancelled by user.',
+    thinking: 'ChatGPT is thinking and writing...',
+    preparing: 'ChatGPT is preparing response...',
+    errorPrefix: (e) => `ChatGPT error: ${e}`,
+    timeout: 'ChatGPT response timed out before completion. Please re-send your prompt.'
+  },
+  fa: {
+    closed: 'اتصال با \u200FChatGPT\u200F قطع شده است. لطفاً دوباره متصل شوید.',
+    notReady: '\u200FChatGPT\u200F هنوز آماده دریافت پیام نیست. اگر پنجره ورود باز است، ابتدا وارد حساب خود شوید.',
+    sendFailed: 'ارسال پیام به \u200FChatGPT\u200F انجام نشد. لطفاً یک گفتگوی جدید باز کنید و دوباره تلاش کنید.',
+    cancelled: 'عملیات توسط کاربر متوقف شد.',
+    thinking: '\u200FChatGPT\u200F در حال فکر کردن و نوشتن است...',
+    preparing: '\u200FChatGPT\u200F در حال آماده‌سازی پاسخ است...',
+    errorPrefix: (e) => `خطای \u200FChatGPT\u200F: \u200F${e}\u200F`,
+    timeout: 'زمان انتظار برای دریافت پاسخ \u200FChatGPT\u200F به پایان رسید. لطفاً پیام خود را دوباره بفرستید.'
+  }
+};
+
 function injectPromptChatGPT({ selector, content }) {
   const norm = (s) => (s || '').replace(/\r/g, '').replace(/\u00a0/g, ' ').trim();
   const el = document.querySelector(selector);
@@ -117,6 +140,13 @@ class ChatGptDriver {
     this.isAborted = false;
     this.thinkEnabled = true;
     this._baseline = null;
+    this.lang = 'en';
+  }
+
+  t(key, ...args) {
+    const table = CHATGPT_MSG[this.lang === 'fa' ? 'fa' : 'en'] || CHATGPT_MSG.en;
+    const v = table[key];
+    return typeof v === 'function' ? v(...args) : v;
   }
 
   abort() {
@@ -467,7 +497,8 @@ class ChatGptDriver {
   }
 
   async sendMessage(text, options = {}) {
-    if (!this.page || this.page.isClosed()) throw new Error('پنجره مرورگر ChatGPT بسته است.');
+    if (options.lang) this.lang = options.lang === 'fa' ? 'fa' : 'en';
+    if (!this.page || this.page.isClosed()) throw new Error(this.t('closed'));
     if (!/chatgpt\.com/.test(this.page.url())) {
       await this.page.goto(CHATGPT_NEW_CHAT, { waitUntil: 'domcontentloaded', timeout: 25000 });
       await this.page.waitForTimeout(1200);
@@ -496,7 +527,7 @@ class ChatGptDriver {
     await this.clearComposer();
 
     const input = await this.findInputElement();
-    if (!input) throw new Error('فیلد ورودی ChatGPT یافت نشد (اگر صفحه لاگین باز است، اول ChatGPT را Connect کنید).');
+    if (!input) throw new Error(this.t('notReady'));
     await input.focus();
     await this.page.waitForTimeout(150);
 
@@ -514,7 +545,7 @@ class ChatGptDriver {
     }
 
     if (!result || !result.ok) {
-      throw new Error(`تزریق متن به ChatGPT ناموفق بود (روش: ${result && result.via}). یک چت جدید باز کنید و دوباره تلاش کنید.`);
+      throw new Error(this.t('sendFailed'));
     }
     console.log(`✅ ChatGPT injection OK (method: ${result.via})`);
 
@@ -547,7 +578,7 @@ class ChatGptDriver {
     }
 
     if (!sent) {
-      throw new Error('ارسال پیام به ChatGPT انجام نشد (دکمه Send در هیچ موقعیتی قابل کلیک نبود). یک چت جدید باز کنید و دوباره تلاش کنید.');
+      throw new Error(this.t('sendFailed'));
     }
   }
 
@@ -639,7 +670,8 @@ class ChatGptDriver {
           .some(el => /response complete/i.test(el.textContent || ''));
 
         const RATE_RE = /you(?:'ve| have) reached|usage limit|rate limit|too many requests|out of (?:free )?messages|limit reached|try again later|upgrade to (?:plus|pro)|get plus to|you(?:'re| are) out of/i;
-        const bannerEls = Array.from(document.querySelectorAll('[role="alert"], [data-testid*="rate-limit"], [class*="rate-limit"], [class*="usage-limit"], [class*="error-banner"], [data-testid="conversation-error"]')).filter(visible);
+        const bannerEls = Array.from(document.querySelectorAll('[role="alert"], [data-testid*="rate-limit"], [class*="rate-limit"], [class*="usage-limit"], [class*="error-banner"], [data-testid="conversation-error"]'))
+          .filter(el => visible(el) && (!el.closest('pre, code, [data-response-body]') || el.matches('[data-testid="conversation-error"], [data-testid*="rate-limit"]')));
         const bannerText = bannerEls.map(el => norm(el.innerText || '')).join('\n');
         const rateLimit = RATE_RE.test(bannerText);
         const errorText = /error|wrong|failed|unable|couldn't/i.test(bannerText) ? bannerText.slice(0, 400) : '';
@@ -675,10 +707,10 @@ class ChatGptDriver {
     let sawRunning = false, sawNewTurn = false, lastEmitted = '';
 
     while (true) {
-      if (this.isAborted) throw new Error('Task was cancelled by user.');
-      if (!this.page || this.page.isClosed()) throw new Error('ChatGPT browser window was closed.');
+      if (this.isAborted) throw new Error(this.t('cancelled'));
+      if (!this.page || this.page.isClosed()) throw new Error(this.t('closed'));
       await this.page.waitForTimeout(700);
-      if (this.isAborted) throw new Error('Task was cancelled by user.');
+      if (this.isAborted) throw new Error(this.t('cancelled'));
       loops++;
 
       const state = await this.extractLiveState();
@@ -707,7 +739,7 @@ class ChatGptDriver {
           onProgress({ text: state.bodyText });
           lastEmitted = state.bodyText;
         }
-        if (typeof onStatus === 'function') onStatus('ChatGPT is thinking and writing...');
+        if (typeof onStatus === 'function') onStatus(this.t('thinking'));
         continue;
       }
 
@@ -722,7 +754,7 @@ class ChatGptDriver {
           const e = new Error('NO_NEW_RESPONSE: ChatGPT response could not be located.');
           e.code = 'NO_NEW_RESPONSE'; throw e;
         }
-        if (typeof onStatus === 'function') onStatus('ChatGPT is preparing response...');
+        if (typeof onStatus === 'function') onStatus(this.t('preparing'));
         continue;
       }
 
@@ -756,7 +788,7 @@ class ChatGptDriver {
         emptyNew++;
         stable = 0;
         if (emptyNew > 40) {
-          if (state.errorText) throw new Error(`ChatGPT error: ${state.errorText}`);
+          if (state.errorText) throw new Error(this.t('errorPrefix', state.errorText));
           const e = new Error('NO_NEW_RESPONSE: ChatGPT started a reply but no content was captured.');
           e.code = 'NO_NEW_RESPONSE'; throw e;
         }
@@ -764,7 +796,7 @@ class ChatGptDriver {
 
       if (loops > 420) {
         if (text.length > 5) return text;
-        throw new Error('ChatGPT response timed out before completion. Please re-send your prompt.');
+        throw new Error(this.t('timeout'));
       }
     }
   }

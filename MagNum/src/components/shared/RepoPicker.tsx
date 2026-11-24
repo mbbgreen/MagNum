@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Search, Plus, Folder, FolderOpen, Check, ChevronRight, HardDrive } from 'lucide-react';
+import { Language, translations } from '../../i18n/translations';
 
 interface RepoPickerMenuProps {
   open: boolean;
@@ -11,17 +12,21 @@ interface RepoPickerMenuProps {
   onScratch: () => void;
   onOpenFolder: () => void;
   onBrowseInApp?: () => void;
-  posStyle?: React.CSSProperties; 
+  posStyle?: React.CSSProperties;
+  lang?: Language;
 }
 
 export const isScratchPath = (p: string) => /[/\\]scratch[/\\]scratch-/i.test(p || '');
 export const scratchLabel = 'Start from scratch';
 
 export const RepoPickerMenu: React.FC<RepoPickerMenuProps> = ({
-  open, onClose, recents, activePath, isScratch, onSelect, onScratch, onOpenFolder, onBrowseInApp, posStyle
+  open, onClose, recents, activePath, isScratch, onSelect, onScratch, onOpenFolder, onBrowseInApp, posStyle, lang = 'en'
 }) => {
   const [q, setQ] = useState('');
   const ref = useRef<HTMLDivElement>(null);
+  const t = translations[lang];
+  const isFa = lang === 'fa';
+
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) onClose(); };
@@ -30,13 +35,16 @@ export const RepoPickerMenu: React.FC<RepoPickerMenuProps> = ({
     document.addEventListener('keydown', onKey);
     return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); };
   }, [open, onClose]);
+
   if (!open) return null;
   const list = recents.filter(p => p.toLowerCase().includes(q.toLowerCase()));
   const row: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, padding: '7px 9px', borderRadius: 6, cursor: 'pointer', fontSize: 12.5, color: 'var(--text-main)' };
-  const label: React.CSSProperties = { fontSize: 10.5, color: 'var(--text-dim)', fontWeight: 700, padding: '6px 10px 3px', letterSpacing: 0.3 };
+  const label: React.CSSProperties = { fontSize: 10.5, color: 'var(--text-dim)', fontWeight: 700, padding: '6px 10px 3px', letterSpacing: isFa ? 0 : 0.3 };
+
   return (
     <div
       ref={ref}
+      dir={isFa ? 'rtl' : 'ltr'}
       style={{
         position: 'absolute', top: 'calc(100% + 6px)', left: 0, width: 300,
         background: 'var(--bg-popover)', border: '1px solid var(--border-subtle)', borderRadius: 10,
@@ -46,20 +54,20 @@ export const RepoPickerMenu: React.FC<RepoPickerMenuProps> = ({
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '7px 9px', borderBottom: '1px solid var(--border-subtle)', marginBottom: 5 }}>
         <Search size={13} color="var(--text-dim)" />
-        <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="Search repos, cloud environments..."
+        <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder={t.searchReposPlaceholder}
           style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: 'var(--text-main)', fontSize: 12 }} />
       </div>
       <div style={{ maxHeight: 320, overflowY: 'auto' }}>
-        <div style={label}>Recents</div>
+        <div style={label}>{t.recents}</div>
         <div className="hover-bright" style={row} onClick={() => { onScratch(); onClose(); }}>
           <Plus size={14} color="var(--text-muted)" style={{ flexShrink: 0 }} />
-          <span style={{ flex: 1 }}>{scratchLabel}</span>
+          <span style={{ flex: 1 }}>{t.startFromScratch}</span>
           {isScratch && <Check size={13} color="var(--accent-green)" style={{ flexShrink: 0 }} />}
         </div>
         {list.map(p => (
           <div key={p} className="hover-bright" style={row} onClick={() => { onSelect(p); onClose(); }} title={p}>
             <Folder size={14} color="var(--text-muted)" style={{ flexShrink: 0 }} />
-            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <span dir="auto" style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {p.split(/[\\/]/).filter(Boolean).pop()}
             </span>
             {p === activePath && <Check size={13} color="var(--accent-green)" style={{ flexShrink: 0 }} />}
@@ -68,14 +76,14 @@ export const RepoPickerMenu: React.FC<RepoPickerMenuProps> = ({
         <div style={{ height: 1, background: 'var(--border-subtle)', margin: '5px 0' }} />
         <div className="hover-bright" style={row} onClick={() => { onOpenFolder(); onClose(); }}>
           <FolderOpen size={14} color="var(--text-muted)" style={{ flexShrink: 0 }} />
-          <span style={{ flex: 1 }}>Use Existing...</span>
-          <ChevronRight size={13} color="var(--text-dim)" style={{ flexShrink: 0 }} />
+          <span style={{ flex: 1 }}>{t.useExisting}</span>
+          <ChevronRight size={13} color="var(--text-dim)" style={{ flexShrink: 0, transform: isFa ? 'rotate(180deg)' : 'none' }} />
         </div>
         {onBrowseInApp && (
-          <div className="hover-bright" style={row} onClick={() => { onBrowseInApp(); onClose(); }} title="Works on every system — no OS dialog needed">
+          <div className="hover-bright" style={row} onClick={() => { onBrowseInApp(); onClose(); }} title={t.browseInAppTitle}>
             <HardDrive size={14} color="var(--accent-green)" style={{ flexShrink: 0 }} />
-            <span style={{ flex: 1 }}>Browse inside app…</span>
-            <ChevronRight size={13} color="var(--text-dim)" style={{ flexShrink: 0 }} />
+            <span style={{ flex: 1 }}>{t.browseInApp}</span>
+            <ChevronRight size={13} color="var(--text-dim)" style={{ flexShrink: 0, transform: isFa ? 'rotate(180deg)' : 'none' }} />
           </div>
         )}
       </div>

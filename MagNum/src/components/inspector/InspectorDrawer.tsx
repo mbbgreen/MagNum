@@ -47,18 +47,18 @@ interface InspectorDrawerProps {
   onTerminalRestart: () => void;
 }
 
-const PANEL_TABS: { key: PanelKey; label: string; icon: React.ReactNode }[] = [
-  { key: 'changes', label: 'Changes', icon: <Diff size={12} /> },
-  { key: 'browser', label: 'Browser', icon: <Globe size={12} /> },
-  { key: 'terminal', label: 'powershell', icon: <Terminal size={12} /> },
-  { key: 'files', label: 'Files', icon: <FileText size={12} /> }
+const getPanelTabs = (t: typeof translations['en']): { key: PanelKey; label: string; icon: React.ReactNode }[] => [
+  { key: 'changes', label: t.tabChanges, icon: <Diff size={12} /> },
+  { key: 'browser', label: t.tabBrowser, icon: <Globe size={12} /> },
+  { key: 'terminal', label: t.tabTerminal, icon: <Terminal size={12} /> },
+  { key: 'files', label: t.tabFiles, icon: <FileText size={12} /> }
 ];
 
-const PANEL_MENU_ITEMS: { key: PanelKey; label: string; icon: React.ReactNode; shortcut: string }[] = [
-  { key: 'files', label: 'Files', icon: <FileText size={14} />, shortcut: 'Ctrl+G' },
-  { key: 'terminal', label: 'powershell', icon: <Terminal size={14} />, shortcut: 'Ctrl+J' },
-  { key: 'browser', label: 'Browser', icon: <Globe size={14} />, shortcut: 'Ctrl+Shift+B' },
-  { key: 'changes', label: 'Changes', icon: <Diff size={14} />, shortcut: 'Ctrl+E' }
+const getPanelMenuItems = (t: typeof translations['en']): { key: PanelKey; label: string; icon: React.ReactNode; shortcut: string }[] => [
+  { key: 'files', label: t.tabFiles, icon: <FileText size={14} />, shortcut: 'Ctrl+G' },
+  { key: 'terminal', label: t.tabTerminal, icon: <Terminal size={14} />, shortcut: 'Ctrl+J' },
+  { key: 'browser', label: t.tabBrowser, icon: <Globe size={14} />, shortcut: 'Ctrl+Shift+B' },
+  { key: 'changes', label: t.tabChanges, icon: <Diff size={14} />, shortcut: 'Ctrl+E' }
 ];
 
 
@@ -71,7 +71,11 @@ const PanelAddMenu: React.FC<{
   onOpenFile: (rel: string) => void;
   onOpenUrl: (q: string) => void;
   onClose: () => void;
-}> = ({ pos, anchorRef, openTabs, fileTree, onAddTab, onOpenFile, onOpenUrl, onClose }) => {
+  lang?: Language;
+}> = ({ pos, anchorRef, openTabs, fileTree, onAddTab, onOpenFile, onOpenUrl, onClose, lang = 'en' }) => {
+  const t = translations[lang] || translations.en;
+  const isFa = lang === 'fa';
+  const panelMenuItems = getPanelMenuItems(t);
   const [query, setQuery] = useState('');
   const boxRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -91,7 +95,7 @@ const PanelAddMenu: React.FC<{
   }, [onClose, anchorRef]);
 
   const q = query.trim().toLowerCase();
-  const items = PANEL_MENU_ITEMS.filter(it => !q || it.label.toLowerCase().includes(q));
+  const items = panelMenuItems.filter(it => !q || it.label.toLowerCase().includes(q));
   const files = useMemo(() => {
     const out: string[] = [];
     const walk = (nodes: FileNode[]) => {
@@ -108,6 +112,7 @@ const PanelAddMenu: React.FC<{
   return (
     <div
       ref={boxRef}
+      dir={isFa ? 'rtl' : 'ltr'}
       style={{
         position: 'fixed', top: pos.top, left: pos.left, width: 284,
         background: 'var(--bg-popover)', border: '1px solid var(--border-subtle)', borderRadius: 12,
@@ -127,7 +132,7 @@ const PanelAddMenu: React.FC<{
               else if (query.trim()) { onOpenUrl(query.trim()); onClose(); }
             }
           }}
-          placeholder="Open any file, URL, or panel…"
+          placeholder={t.openFileUrlPanel}
           style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: 'var(--text-main)', fontSize: 12 }}
         />
       </div>
@@ -135,8 +140,8 @@ const PanelAddMenu: React.FC<{
         <div key={it.key} className="hover-bright" style={rowStyle} onClick={() => { onAddTab(it.key); onClose(); }}>
           <span style={{ color: 'var(--text-muted)', display: 'flex' }}>{it.icon}</span>
           <span style={{ fontWeight: 600 }}>{it.label}</span>
-          {openTabs.includes(it.key) && <span style={{ fontSize: 10, color: 'var(--text-dim)' }}>open</span>}
-          <span style={{ marginLeft: 'auto', fontSize: 10.5, color: 'var(--text-dim)' }}>{it.shortcut}</span>
+          {openTabs.includes(it.key) && <span style={{ fontSize: 10, color: 'var(--text-dim)' }}>{t.tabOpenBadge}</span>}
+          <span dir="ltr" style={{ marginInlineStart: 'auto', fontSize: 10.5, color: 'var(--text-dim)' }}>{it.shortcut}</span>
         </div>
       ))}
       {fileHits.length > 0 && (
@@ -145,7 +150,7 @@ const PanelAddMenu: React.FC<{
           {fileHits.map(f => (
             <div key={f} className="hover-bright" style={rowStyle} onClick={() => { onOpenFile(f); onClose(); }} title={f}>
               <FileText size={13} color="var(--text-muted)" style={{ flexShrink: 0 }} />
-              <span className="code-font" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f}</span>
+              <span dir="ltr" className="code-font" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f}</span>
             </div>
           ))}
         </>
@@ -155,7 +160,7 @@ const PanelAddMenu: React.FC<{
           <div style={{ height: 1, background: 'var(--border-subtle)', margin: '4px 0' }} />
           <div className="hover-bright" style={rowStyle} onClick={() => { onOpenUrl(query.trim()); onClose(); }}>
             <Globe size={13} color="var(--accent-green)" style={{ flexShrink: 0 }} />
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Search web for “{query.trim()}”</span>
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.searchWebFor(query.trim())}</span>
           </div>
         </>
       )}
@@ -185,7 +190,9 @@ const FileTreeNode: React.FC<{ node: FileNode; depth: number; selected: string; 
 const navBtnStyle: React.CSSProperties = { background: 'transparent', border: 'none', color: 'var(--text-muted)', padding: 4, borderRadius: 6, cursor: 'pointer', display: 'flex', flexShrink: 0 };
 
 
-const BrowserPanel: React.FC = () => {
+const BrowserPanel: React.FC<{ lang?: Language }> = ({ lang = 'en' }) => {
+  const t = translations[lang] || translations.en;
+  const isFa = lang === 'fa';
   const hostRef = useRef<HTMLDivElement>(null);
   const [addr, setAddr] = useState('');
   const [pageTitle] = useState('');
@@ -253,40 +260,40 @@ const BrowserPanel: React.FC = () => {
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '6px 8px', borderBottom: '1px solid var(--border-subtle)', flexShrink: 0 }}>
-        <button className="hover-bright" onClick={() => embeddedBrowser.back()} title="Back" style={navBtnStyle}><ArrowLeft size={14} /></button>
-        <button className="hover-bright" onClick={() => embeddedBrowser.forward()} title="Forward" style={navBtnStyle}><ArrowRight size={14} /></button>
-        <button className="hover-bright" onClick={() => embeddedBrowser.reload()} title="Reload" style={navBtnStyle}><RotateCw size={13} /></button>
+        <button className="hover-bright" onClick={() => embeddedBrowser.back()} title={t.browserBack} style={navBtnStyle}><ArrowLeft size={14} /></button>
+        <button className="hover-bright" onClick={() => embeddedBrowser.forward()} title={t.browserForward} style={navBtnStyle}><ArrowRight size={14} /></button>
+        <button className="hover-bright" onClick={() => embeddedBrowser.reload()} title={t.browserReload} style={navBtnStyle}><RotateCw size={13} /></button>
         <input
           value={addr}
           onChange={(e) => setAddr(e.target.value)}
           onFocus={() => { addrFocused.current = true; }}
           onBlur={() => { addrFocused.current = false; }}
           onKeyDown={(e) => { if (e.key === 'Enter') { submit(); (e.target as HTMLInputElement).blur(); } }}
-          placeholder="Search Google or type a URL..."
+          placeholder={t.browserSearchPlaceholder}
+          dir={addr ? 'ltr' : (isFa ? 'rtl' : 'ltr')}
           style={{ flex: 1, minWidth: 0, background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 8, color: 'var(--text-main)', fontSize: 12, padding: '5px 10px', outline: 'none' }}
         />
-        <button className="hover-bright" onClick={submit} title="Go" style={navBtnStyle}><Search size={13} /></button>
+        <button className="hover-bright" onClick={submit} title={t.browserGo} style={navBtnStyle}><Search size={13} /></button>
       </div>
       {}
       {}
       <div ref={hostRef} style={{ flex: 1, position: 'relative', background: 'var(--bg-editor)', overflow: 'hidden', marginLeft: 6 }}>
         {!ready && !error && (
-          <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, background: 'var(--bg-topbar)', color: 'var(--text-dim)', fontSize: 12, textAlign: 'center', padding: 20 }}>
+          <div dir={isFa ? 'rtl' : 'ltr'} style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, background: 'var(--bg-topbar)', color: 'var(--text-dim)', fontSize: 12, textAlign: 'center', padding: 20 }}>
             <Globe size={30} color="var(--accent-green)" />
-            <span style={{ fontWeight: 700, color: 'var(--text-main)' }}>MagNum Embedded Browser</span>
-            <span style={{ fontSize: 11 }}>Launching native in-app webview…</span>
+            <span style={{ fontWeight: 700, color: 'var(--text-main)' }}>{t.embeddedBrowserTitle}</span>
+            <span style={{ fontSize: 11 }}>{t.embeddedBrowserLaunching}</span>
           </div>
         )}
         {error && (
-          <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, background: 'var(--bg-topbar)', color: 'var(--diff-del-text)', fontSize: 12, textAlign: 'center', padding: 24 }}>
+          <div dir={isFa ? 'rtl' : 'ltr'} style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, background: 'var(--bg-topbar)', color: 'var(--diff-del-text)', fontSize: 12, textAlign: 'center', padding: 24 }}>
             <Globe size={28} color="var(--diff-del-text)" />
-            <span style={{ fontWeight: 700 }}>Embedded webview failed to start</span>
-            <span style={{ fontSize: 11, lineHeight: 1.7, maxWidth: 340 }}>{error}<br />Check Tauri capabilities (core:webview:allow-create-webview …) in src-tauri/capabilities/default.json</span>
+            <span style={{ fontWeight: 700 }}>{t.embeddedBrowserFailed}</span>
           </div>
         )}
       </div>
       <div style={{ padding: '4px 10px', borderTop: '1px solid var(--border-subtle)', fontSize: 10.5, color: 'var(--text-dim)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 0 }}>
-        {pageTitle || 'New Tab'}{addr && addr !== 'about:blank' ? ` — ${addr}` : ''}
+        {pageTitle || t.newTab}{addr && addr !== 'about:blank' ? ` — ${addr}` : ''}
       </div>
     </div>
   );
@@ -294,11 +301,6 @@ const BrowserPanel: React.FC = () => {
 
 
 type ChangeScope = 'all' | 'last' | 'pending';
-const SCOPE_LABELS: Record<ChangeScope, string> = {
-  all: 'All Chat Changes',
-  last: 'Last Agent Turn',
-  pending: 'Pending Approval'
-};
 interface ChangeEditRef { id: number; file: string; added: number; deleted: number; }
 interface DiffItem { kind: 'add' | 'del' | 'ctx'; text: string; num: number; }
 type DiffSeg =
@@ -369,6 +371,12 @@ const ChangesPanel: React.FC<{
   pendingCommand, onApproveCommand, onRejectCommand, lang = 'en'
 }) => {
   const t = translations[lang] || translations.en;
+  const isFa = lang === 'fa';
+  const scopeLabels: Record<ChangeScope, string> = {
+    all: t.scopeAll,
+    last: t.scopeLast,
+    pending: t.scopePending
+  };
   const [scope, setScope] = useState<ChangeScope>('all');
   const [scopeMenu, setScopeMenu] = useState(false);
   const [moreMenu, setMoreMenu] = useState(false);
@@ -486,38 +494,38 @@ const ChangesPanel: React.FC<{
         <div style={{ position: 'relative' }} ref={scopeRef}>
           <button onClick={() => setScopeMenu(v => !v)} className="hover-bright" style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 7, color: 'var(--text-main)', fontSize: 11.5, padding: '4px 8px', cursor: 'pointer' }}>
             {scopeIcon(scope)}
-            <span style={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }}>{SCOPE_LABELS[scope]}</span>
+            <span style={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }}>{scopeLabels[scope]}</span>
             <span className="code-font" style={{ fontSize: 10.5, color: 'var(--diff-add-text)' }}>+{tScope.a}</span>
             {tScope.d > 0 && <span className="code-font" style={{ fontSize: 10.5, color: 'var(--diff-del-text)' }}>-{tScope.d}</span>}
             <ChevronDown size={11} color="var(--text-dim)" />
           </button>
           {scopeMenu && (
-            <div style={{ ...menuBox, width: 230 }}>
-              {scopeItem('last', 'Last Agent Turn', tLast)}
-              {scopeItem('all', 'All Chat Changes', tAll)}
-              {scopeItem('pending', 'Pending Approval', tPend)}
+            <div dir={isFa ? 'rtl' : 'ltr'} style={{ ...menuBox, width: 230 }}>
+              {scopeItem('last', t.scopeLast, tLast)}
+              {scopeItem('all', t.scopeAll, tAll)}
+              {scopeItem('pending', t.scopePending, tPend)}
             </div>
           )}
         </div>
-        <span title="Git integration is not connected yet" style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--text-dim)', background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 7, padding: '4px 8px', opacity: 0.65, flexShrink: 0 }}>
+        <span title={t.gitNotConnected} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--text-dim)', background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 7, padding: '4px 8px', opacity: 0.65, flexShrink: 0 }}>
           <GitBranch size={11} /> main
         </span>
         <div style={{ position: 'relative' }} ref={moreRef}>
-          <button onClick={() => setMoreMenu(v => !v)} className="hover-bright" title="View options" style={{ background: 'transparent', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', display: 'flex', padding: 4, borderRadius: 6 }}>
+          <button onClick={() => setMoreMenu(v => !v)} className="hover-bright" title={t.viewOptionsTip} style={{ background: 'transparent', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', display: 'flex', padding: 4, borderRadius: 6 }}>
             <MoreHorizontal size={14} />
           </button>
           {moreMenu && (
-            <div style={{ ...menuBox, width: 180 }}>
-              <div className="hover-bright" style={menuItem} onClick={() => { setFoldMode('open'); setMoreMenu(false); }}>Expand all hunks</div>
-              <div className="hover-bright" style={menuItem} onClick={() => { setFoldMode('closed'); setMoreMenu(false); }}>Collapse all hunks</div>
-              <div className="hover-bright" style={menuItem} onClick={() => { setFoldMode('auto'); setOpenFolds({}); setMoreMenu(false); }}>Auto fold (default)</div>
+            <div dir={isFa ? 'rtl' : 'ltr'} style={{ ...menuBox, width: 180 }}>
+              <div className="hover-bright" style={menuItem} onClick={() => { setFoldMode('open'); setMoreMenu(false); }}>{t.expandAllHunks}</div>
+              <div className="hover-bright" style={menuItem} onClick={() => { setFoldMode('closed'); setMoreMenu(false); }}>{t.collapseAllHunks}</div>
+              <div className="hover-bright" style={menuItem} onClick={() => { setFoldMode('auto'); setOpenFolds({}); setMoreMenu(false); }}>{t.autoFoldDefault}</div>
             </div>
           )}
         </div>
         <div style={{ flex: 1 }} />
         {pendingRefs.length > 0 && (
           <button onClick={onRejectAll} style={{ background: 'transparent', border: '1px solid rgba(239,68,68,0.4)', color: 'var(--diff-del-text)', padding: '4px 10px', borderRadius: 7, cursor: 'pointer', fontSize: 11.5, fontWeight: 600, flexShrink: 0 }}>
-            Reject All
+            {t.rejectAll}
           </button>
         )}
         {selectedFiles.length > 0 ? (
@@ -529,15 +537,15 @@ const ChangesPanel: React.FC<{
             }}
             style={{ background: '#ef4444', border: 'none', color: '#fff', padding: '4px 12px', borderRadius: 7, cursor: 'pointer', fontSize: 11.5, fontWeight: 700, flexShrink: 0 }}
           >
-            Revert Selected ({selectedFiles.length})
+            {t.revertSelected(selectedFiles.length)}
           </button>
         ) : pendingRefs.length > 0 ? (
           <button onClick={onApproveAll} style={{ background: 'var(--accent-green)', border: 'none', color: 'var(--on-accent)', padding: '4px 12px', borderRadius: 7, cursor: 'pointer', fontSize: 11.5, fontWeight: 700, flexShrink: 0 }}>
-            Approve All
+            {t.approveAll}
           </button>
         ) : (
           <button disabled style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', color: 'var(--text-dim)', padding: '4px 12px', borderRadius: 7, fontSize: 11.5, fontWeight: 600, cursor: 'default', flexShrink: 0 }}>
-            No pending changes
+            {t.noPendingChangesBtn}
           </button>
         )}
       </div>
@@ -545,7 +553,7 @@ const ChangesPanel: React.FC<{
       <div style={{ flex: 1, overflowY: 'auto' }}>
         {}
         {pendingCommand && (
-          <div style={{
+          <div dir={isFa ? 'rtl' : 'ltr'} style={{
             margin: '12px 10px',
             padding: '12px 14px',
             background: 'rgba(245, 158, 11, 0.08)',
@@ -592,7 +600,7 @@ const ChangesPanel: React.FC<{
                   gap: 6
                 }}
               >
-                <Check size={13} /> Execute
+                <Check size={13} /> {t.executeBtn}
               </button>
               <button
                 onClick={onRejectCommand}
@@ -612,7 +620,7 @@ const ChangesPanel: React.FC<{
                   gap: 6
                 }}
               >
-                <X size={13} /> Reject
+                <X size={13} /> {t.rejectBtn}
               </button>
             </div>
           </div>
@@ -621,11 +629,11 @@ const ChangesPanel: React.FC<{
         {fileGroups.length === 0 ? (
           <div style={{ padding: '18px 12px' }}>
             <div style={{ color: 'var(--text-dim)', fontSize: 12, textAlign: 'center', marginBottom: 14 }}>
-              {scope === 'pending' ? 'No pending changes waiting for approval.' : scope === 'last' ? 'No edits in the last agent turn.' : 'No changes applied in this chat yet.'}
+              {scope === 'pending' ? t.emptyPendingChanges : scope === 'last' ? t.emptyLastTurnChanges : t.emptyAllChanges}
             </div>
-            {summaryRow('Files Changed', filesIn(liveAll).length, tAll, 'all')}
-            {summaryRow('Last Agent Turn', filesIn(liveLast).length, tLast, 'last')}
-            {summaryRow('Pending Approval', filesIn(pendingRefs).length, tPend, 'pending')}
+            {summaryRow(t.filesChangedLabel, filesIn(liveAll).length, tAll, 'all')}
+            {summaryRow(t.scopeLast, filesIn(liveLast).length, tLast, 'last')}
+            {summaryRow(t.scopePending, filesIn(pendingRefs).length, tPend, 'pending')}
           </div>
         ) : (
           fileGroups.map(([file, edits]) => {
@@ -649,12 +657,12 @@ const ChangesPanel: React.FC<{
                   <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
                     {scope !== 'pending' && (
                       <>
-                        <button title="Revert changes in this file" className="hover-bright" onClick={(e) => { e.stopPropagation(); onRevertEdits(ids); }} style={{ background: 'transparent', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', display: 'flex', padding: 3, borderRadius: 5 }}>
+                        <button title={t.revertFileTip} className="hover-bright" onClick={(e) => { e.stopPropagation(); onRevertEdits(ids); }} style={{ background: 'transparent', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', display: 'flex', padding: 3, borderRadius: 5 }}>
                           <RotateCcw size={12} />
                         </button>
                         <input
                           type="checkbox"
-                          title="Select for bulk revert"
+                          title={t.selectBulkRevertTip}
                           checked={isSel}
                           onClick={(e) => e.stopPropagation()}
                           onChange={() => setSelectedFiles(prev => (isSel ? prev.filter(f => f !== file) : [...prev, file]))}
@@ -666,7 +674,7 @@ const ChangesPanel: React.FC<{
                 </div>
                 {isOpen && edits.map(e => {
                   const d = editDetails[e.id];
-                  if (!d) return <div key={e.id} style={{ padding: '6px 12px', fontSize: 11, color: 'var(--text-dim)' }}>Loading diff…</div>;
+                  if (!d) return <div key={e.id} style={{ padding: '6px 12px', fontSize: 11, color: 'var(--text-dim)' }}>{t.loadingDiff}</div>;
                   const segs = buildSegments(numberDiff(d.diff), file, e.id);
                   return (
                     <div key={e.id} className="code-font selectable-text" style={{ fontSize: 11, lineHeight: 1.6 }}>
@@ -678,14 +686,14 @@ const ChangesPanel: React.FC<{
                             <button
                               key={seg.key}
                               onClick={() => setOpenFolds(prev => ({ ...prev, [seg.key]: true }))}
-                              title="Expand hidden lines"
+                              title={t.expandHiddenLinesTip}
                               style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', background: 'var(--bg-surface)', border: 'none', borderTop: '1px solid var(--border-subtle)', borderBottom: '1px solid var(--border-subtle)', color: 'var(--text-dim)', fontSize: 10.5, padding: '3px 10px', cursor: 'pointer' }}
                             >
                               <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 0.7 }}>
                                 <ChevronDown size={9} style={{ transform: 'rotate(180deg)' }} />
                                 <ChevronDown size={9} />
                               </span>
-                              <span>{seg.count} unmodified lines</span>
+                              <span>{t.unmodifiedLines(seg.count)}</span>
                             </button>
                           )
                         ) : (
@@ -733,7 +741,9 @@ const LiveTerminalPanel: React.FC<{
   onInput: (t: string) => void;
   onInterrupt: () => void;
   onRestart: () => void;
-}> = ({ lines, cwd, onInput, onInterrupt, onRestart }) => {
+  lang?: Language;
+}> = ({ lines, cwd, onInput, onInterrupt, onRestart, lang = 'en' }) => {
+  const t = translations[lang] || translations.en;
   const [input, setInput] = useState('');
   const [history, setHistory] = useState<string[]>([]);
   const [histIdx, setHistIdx] = useState(-1);
@@ -793,8 +803,8 @@ const LiveTerminalPanel: React.FC<{
           <span className="code-font" dir="ltr" style={{ color: 'var(--text-dim)', fontWeight: 400, maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cwd}</span>
         </span>
         <span style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-          <button className="hover-bright" title="Clear (cls)" onClick={(e) => { e.stopPropagation(); onInput('cls'); focusTerminal(); }} style={termIconBtn}><Trash2 size={12} /></button>
-          <button className="hover-bright" title="Restart shell" onClick={(e) => { e.stopPropagation(); onRestart(); focusTerminal(); }} style={termIconBtn}><RotateCw size={12} /></button>
+          <button className="hover-bright" title={t.clearTerminalTip} onClick={(e) => { e.stopPropagation(); onInput('cls'); focusTerminal(); }} style={termIconBtn}><Trash2 size={12} /></button>
+          <button className="hover-bright" title={t.restartShellTip} onClick={(e) => { e.stopPropagation(); onRestart(); focusTerminal(); }} style={termIconBtn}><RotateCw size={12} /></button>
         </span>
       </div>
       <div
@@ -827,6 +837,8 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
   const [width, setWidth] = useState(440);
   const [addMenuPos, setAddMenuPos] = useState<{ top: number; left: number } | null>(null);
   const plusBtnRef = useRef<HTMLButtonElement>(null);
+  const t = translations[lang] || translations.en;
+  const panelTabs = getPanelTabs(t);
 
   
   
@@ -897,13 +909,13 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
       overflow: 'hidden',
       position: 'relative'
     }}>
-      <div onMouseDown={startDrag} title="Drag to resize" style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, cursor: 'col-resize', zIndex: 10 }} />
+      <div onMouseDown={startDrag} title={t.dragToResize} style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, cursor: 'col-resize', zIndex: 10 }} />
 
       {}
       <div style={{ height: 40, borderBottom: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 8px 0 10px', flexShrink: 0, gap: 6 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 2, flex: 1, minWidth: 0, overflow: 'hidden' }}>
           {tabs.map(k => {
-            const def = PANEL_TABS.find(p => p.key === k)!;
+            const def = panelTabs.find(p => p.key === k)!;
             const active = k === tab;
             return (
               <div
@@ -924,7 +936,7 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{def.label}</span>
                 <span
                   onClick={(e) => { e.stopPropagation(); onCloseTab(k); }}
-                  title="Close tab"
+                  title={t.closeTabTip}
                   style={{ cursor: 'pointer', color: 'var(--text-dim)', fontSize: 10, padding: '1px 2px', display: 'flex', flexShrink: 0 }}
                 >✕</span>
               </div>
@@ -936,7 +948,7 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
               const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
               setAddMenuPos(cur => (cur ? null : { top: r.bottom + 6, left: Math.max(8, Math.min(r.left - 4, window.innerWidth - 292)) }));
             }}
-            title="Open panel, file, or URL"
+            title={t.openPanelMenuTip}
             className="hover-bright"
             style={{
               background: addMenuPos ? 'var(--bg-surface-hover)' : 'transparent',
@@ -951,13 +963,13 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
           <button
             onClick={() => setWidth(w => w > 500 ? 440 : Math.round(window.innerWidth * 0.62))}
-            title={width > 500 ? 'Restore panel width' : 'Expand panel (Cursor style)'}
+            title={width > 500 ? t.restorePanelWidthTip : t.expandPanelTip}
             className="hover-bright"
             style={{ background: 'transparent', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', display: 'flex', padding: 2 }}
           >
             {width > 500 ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
           </button>
-          <button onClick={onClose} title="Collapse panel" className="hover-bright" style={{ background: 'transparent', border: 'none', color: 'var(--accent-green)', cursor: 'pointer', display: 'flex', padding: 2 }}>
+          <button onClick={onClose} title={t.collapsePanelTip} className="hover-bright" style={{ background: 'transparent', border: 'none', color: 'var(--accent-green)', cursor: 'pointer', display: 'flex', padding: 2 }}>
             <PanelRight size={13} />
           </button>
         </div>
@@ -980,9 +992,9 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
             lang={lang}
           />
         )}
-        {tab === 'browser' && <BrowserPanel />}
+        {tab === 'browser' && <BrowserPanel lang={lang} />}
         {tab === 'terminal' && (
-          <LiveTerminalPanel lines={termLines} cwd={termCwd} onInput={onTerminalInput} onInterrupt={onTerminalInterrupt} onRestart={onTerminalRestart} />
+          <LiveTerminalPanel lines={termLines} cwd={termCwd} onInput={onTerminalInput} onInterrupt={onTerminalInterrupt} onRestart={onTerminalRestart} lang={lang} />
         )}
         {tab === 'files' && (
           <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
@@ -997,7 +1009,7 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
                 theme="vs-dark"
                 path={selectedFileName}
                 language={getFileLanguage(selectedFileName)}
-                value={selectedFileContent || '// Click a file to inspect'}
+                value={selectedFileContent || t.clickFileToInspect}
                 options={{ readOnly: true, minimap: { enabled: false }, fontSize: 12, fontFamily: "'JetBrains Mono', Consolas, monospace", scrollBeyondLastLine: false, automaticLayout: true }}
               />
             </div>
@@ -1015,6 +1027,7 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
           onOpenFile={onOpenFile}
           onOpenUrl={(q) => { onAddTab('browser'); embeddedBrowser.navigate(q); }}
           onClose={() => setAddMenuPos(null)}
+          lang={lang}
         />
       )}
     </aside>

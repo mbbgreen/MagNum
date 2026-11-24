@@ -11,7 +11,9 @@ export function formatInline(text: string): React.ReactNode {
       return (
         <code
           key={i}
+          dir="ltr"
           style={{
+            unicodeBidi: 'isolate',
             background: 'var(--bg-card)',
             padding: '2px 6px',
             borderRadius: '4px',

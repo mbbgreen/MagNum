@@ -46,6 +46,8 @@ const TOKEN_FILE = path.join(DATA_DIR, '.ws-token');
 
 const DEFAULT_IGNORED = ['node_modules', '.git', 'dist', 'build', '.next', 'magnum-profile', 'target', '.kilo', '.clinerules'];
 let activeIgnoredList = [...DEFAULT_IGNORED];
+let lastDeepSeekDiagStatus = null;
+let preSendCaptchaAborted = false;
 
 
 async function writeWsTokenFile() {
@@ -167,6 +169,11 @@ let pendingPatch = null;
 let pendingCommand = null;
 let runningAgent = null;
 let loginCheckTimer = null;
+let deepSeekProfileFreshForLogin = false;
+let isResettingDeepSeekProfile = false;
+let isParkingDeepSeek = false;
+let isManualDeepSeekLogout = false;
+let isLaunchingDeepSeek = false;
 let currentSessionId = null;
 let currentLang = 'en';
 let geminiLoginCheckTimer = null;
@@ -209,7 +216,7 @@ function termFeed(chunk, isErr) {
 
 function runTerminalCommand(cmd) {
   if (termShell) {
-    broadcast({ event: 'terminal_live_output', line: 'A command is already running — press Ctrl+C to interrupt.', isErr: true });
+    broadcast({ event: 'terminal_live_output', line: tS('cmdAlreadyRunning'), isErr: true });
     return;
   }
   broadcast({ event: 'terminal_echo', cwd: termCwd, command: cmd });
@@ -242,61 +249,131 @@ const treeSnapshots = new Map();
 const SERVER_STRINGS = {
   en: {
     needWorkspace: 'Please open a project folder (Workspace) first.',
-    syncing: 'Checking and syncing chat with DeepSeek...',
+    syncing: 'Checking and syncing conversation...',
     chatLoaded: 'Chat loaded successfully.',
-    syncDone: (n) => n > 0 ? `${n} chat(s) removed on DeepSeek were purged from local memory.` : 'All local chats are in sync with DeepSeek.',
-    cfChallenge: 'A Cloudflare security check is active. Open the browser window and complete the checkbox.',
-    captchaRequired: 'A security CAPTCHA appeared on DeepSeek! The browser window has been brought to front. Please solve the CAPTCHA and re-send your prompt.',
-    suspended: (notice) => `Your DeepSeek account is temporarily suspended (${notice}). Please log out and switch accounts.`,
-    notLoggedIn: 'You are not logged in to DeepSeek or the session has expired.',
-    noInput: 'Logged in but the chat input is not ready (you may not be on a new chat page).',
-    loading: 'Page is still loading.',
-    closed: 'Browser is not open or the connection was lost.',
-    ready: 'Connection active; DeepSeek is ready for commands.',
-    errCheck: (m) => `Error during check: ${m}`,
-    previousPurged: 'Previous chat was removed on DeepSeek; started a fresh chat.',
-    geminiGoogleLogin: 'Gemini opened the Google sign-in page. The browser window is in front — sign in with your Google account; Gemini connects automatically.',
-    geminiNotLoggedIn: 'Gemini is in Guest mode. In the opened browser window click "Sign in" (top-right) and complete Google login.',
-    geminiNoInput: 'Gemini page is loaded but the chat input is not ready yet.',
-    geminiReady: 'Connection active; Gemini is ready for commands.',
-    geminiNotConnected: 'Gemini is not connected. Use the model pill at the bottom of the chat box to Connect Gemini.',
-    chatgptLogin: 'ChatGPT opened the sign-in page. The browser window is in front — sign in (Google / Apple / email); ChatGPT connects automatically.',
-    chatgptNoInput: 'ChatGPT page is loaded but the chat input is not ready yet.',
-    chatgptReady: 'Connection active; ChatGPT is ready for commands.',
-    chatgptNotConnected: 'ChatGPT is not connected. Use the model pill at the bottom of the chat box to Connect ChatGPT.',
-    chatgptSessionExpiredTask: 'Task not sent: ChatGPT requires a new login. The browser window is open on the login page — sign in, then re-send your prompt.',
-  sessionExpired: 'DeepSeek session expired — the browser window is open on the DeepSeek login page. Sign in again; MagNum reconnects automatically.',
-  sessionExpiredTask: 'Task not sent: DeepSeek requires a new login. The browser window is open on the login page — sign in, then re-send your prompt.',
-  reloginDone: 'DeepSeek login confirmed — engine back to background. You can re-send your prompt.'
+    syncDone: (n) => n > 0 ? `${n} conversation(s) removed remotely were cleared from local history.` : 'All local conversations are in sync.',
+    cfChallenge: 'Security verification is active. Please open the verification window and complete the check.',
+    captchaRequired: 'A security verification (CAPTCHA) appeared for DeepSeek. The verification window is open — please complete it and re-send your message.',
+    captchaWait: 'Security verification (CAPTCHA) opened in the DeepSeek window — please complete it there to continue automatically.',
+    captchaResolved: 'Security verification complete — continuing...',
+    suspended: (notice) => `Your DeepSeek account is temporarily restricted (${notice}). Please disconnect and sign in with another account.`,
+    notLoggedIn: 'You are not signed in to DeepSeek or your session has expired.',
+    noInput: 'Signed in, but the model session is still initializing. Please wait a moment.',
+    loading: 'Session is still loading.',
+    closed: 'Model session is not active or was closed.',
+    ready: 'Connected — DeepSeek is ready.',
+    errCheck: (m) => `Connection check error: ${m}`,
+    previousPurged: 'Previous conversation was no longer available — started a fresh conversation.',
+    previousPurgedAborted: 'Previous conversation was no longer available; started fresh. Please re-send your message.',
+    geminiGoogleLogin: 'Google sign-in opened for Gemini. Sign in with your Google account and MagNum will connect automatically.',
+    geminiNotLoggedIn: 'Gemini is not signed in. Please complete Google sign-in in the opened window.',
+    geminiNoInput: 'Gemini session is still initializing. Please wait a moment.',
+    geminiReady: 'Connected — Gemini is ready.',
+    geminiNotConnected: 'Gemini is not connected. Use the model menu at the bottom of the chat box to connect.',
+    chatgptLogin: 'Sign-in opened for ChatGPT. Sign in with your account and MagNum will connect automatically.',
+    chatgptNoInput: 'ChatGPT session is still initializing. Please wait a moment.',
+    chatgptReady: 'Connected — ChatGPT is ready.',
+    chatgptNotConnected: 'ChatGPT is not connected. Use the model menu at the bottom of the chat box to connect.',
+    chatgptSessionExpiredTask: 'Message not sent: ChatGPT requires signing in again. Complete sign-in in the opened window, then re-send your message.',
+    sessionExpired: 'DeepSeek session expired. The sign-in window is open — sign in again and MagNum will reconnect automatically.',
+    sessionExpiredTask: 'Message not sent: DeepSeek requires signing in again. Complete sign-in in the opened window, then re-send your message.',
+    reloginDone: 'DeepSeek login confirmed. You can re-send your message now.',
+    finalizing: 'Finalizing connection...',
+    readyEngine: (p) => `Ready! ${p} is connected.`,
+    openingWindow: 'Opening verification window...',
+    openingWindowProvider: (p) => `Opening ${p} window...`,
+    windowOpened: 'Verification window is open.',
+    windowShown: (p) => `${p} window brought to front.`,
+    windowHidden: 'Window moved to background.',
+    disconnectedKept: (p) => `Disconnected from ${p}. Your session was kept for quick reconnection.`,
+    disconnectedCleared: (p) => `Disconnected from ${p}. Unauthenticated session cleared.`,
+    workspaceLoaded: (name) => `Workspace loaded: ${name}`,
+    workspaceScanErr: (m) => `Error scanning project: ${m}`,
+    workspaceOpenErr: (m) => `Failed to open workspace: ${m}`,
+    folderErr: (m) => `Error opening folder: ${m}`,
+    scratchReady: 'Scratch workspace ready — you can start from zero.',
+    scratchErr: (m) => `Failed to create scratch workspace: ${m}`,
+    autoConnecting: (p) => `Connecting to ${p}...`,
+    switchingTo: (p) => `Switching to ${p} for this conversation...`,
+    providerReady: (p) => `${p} connected — ready.`,
+    preparingTask: 'Preparing task...',
+    readyForNewTask: 'Ready for a new task.',
+    taskStopped: 'Task stopped by user.',
+    patchApproved: 'Patch approved by user.',
+    patchRejected: 'Patch rejected by user.',
+    commandApproved: 'Command approved by user.',
+    commandRejected: 'Command rejected by user.',
+    remoteMissingKept: (p) => `Previous ${p} conversation no longer exists online — local history kept.`,
+    syncNotConnected: 'Not connected; cannot sync.',
+    uploadingAttachment: (name, p) => `Uploading ${name} to ${p}...`,
+    queuedUploaded: (n, p) => `${n} queued attachment(s) uploaded to ${p}.`,
+    openBrowserFailed: (m) => `Failed to open window: ${m}`,
+    handlerErr: (m) => `Unexpected error: ${m}`,
+    cmdAlreadyRunning: 'A command is already running — press Ctrl+C to interrupt.'
   },
   fa: {
-    needWorkspace: 'لطفاً ابتدا پوشه پروژه (Workspace) را انتخاب کنید.',
-    syncing: 'در حال بررسی و همگام‌سازی چت با دیپ‌سیک...',
-    chatLoaded: 'چت با موفقیت لود شد.',
-    syncDone: (n) => n > 0 ? `تعداد ${n} چتِ حذف‌شده از دیپ‌سیک، از حافظه لوکال پاکسازی شد.` : 'همه چت‌های لوکال با دیپ‌سیک همگام هستند.',
-    cfChallenge: 'صفحه بررسی امنیتی Cloudflare فعال شده است. لطفاً پنجره مرورگر را باز کرده و تیک تایید را بزنید.',
-    captchaRequired: 'یک کپچا امنیتی روی صفحه دیپ‌سیک ظاهر شد! پنجره مرورگر برای شما نمایان شد (یا از دکمه Connect/Browser در بالای صفحه سمت راست استفاده کنید). لطفاً تیک کپچا را حل کنید و سپس دوباره درخواست‌تان را بفرستید.',
-    suspended: (notice) => `حساب کاربری دیپ‌سیک موقتاً مسدود شده است (${notice}). لطفاً با کلیک روی Logout خارج شده و با اکانت دیگری وارد شوید.`,
-    notLoggedIn: 'شما هنوز وارد حساب کاربری دیپ‌سیک نشده‌اید یا سشن منقضی شده است.',
-    noInput: 'وارد اکانت شده‌اید اما فیلد چت هنوز آماده نیست (احتمالاً در صفحه چت جدید نیستید).',
-    loading: 'صفحه هنوز کامل لود نشده است.',
-    closed: 'مرورگر باز نیست یا ارتباط قطع شده است.',
-    ready: 'اتصال فعال و دیپ‌سیک آماده دریافت دستور است.',
-    errCheck: (m) => `خطا در بررسی: ${m}`,
-    previousPurged: 'چت قبلی در دیپ‌سیک حذف شده بود؛ یک چت تازه شروع شد.',
-    geminiGoogleLogin: 'جمنای صفحهٔ ورود گوگل را باز کرد. پنجره مرورگر جلو آمده — با حساب گوگل وارد شوید؛ اتصال جمنای خودکار برقرار می‌شود.',
-    geminiNotLoggedIn: 'جمنای در حالت Guest است. در پنجره مرورگر باز شده روی «Sign in» بالا-راست کلیک کنید و ورود گوگل را کامل کنید.',
-    geminiNoInput: 'صفحه جمنای لود شده اما فیلد چت هنوز آماده نیست.',
-    geminiReady: 'اتصال فعال و جمنای آماده دریافت دستور است.',
-    geminiNotConnected: 'جمنای متصل نیست. از پیل پایین چت‌باکس Connect جمنای را بزنید.',
-    chatgptLogin: 'ChatGPT صفحه ورود را باز کرد. پنجره مرورگر جلو آمده — با گوگل/اپل/ایمیل وارد شوید؛ اتصال خودکار برقرار می‌شود.',
-    chatgptNoInput: 'صفحه ChatGPT لود شده اما فیلد چت هنوز آماده نیست.',
-    chatgptReady: 'اتصال فعال و ChatGPT آماده دریافت دستور است.',
-    chatgptNotConnected: 'ChatGPT متصل نیست. از پیل پایین چت‌باکس Connect ChatGPT را بزنید.',
-    chatgptSessionExpiredTask: 'تسک ارسال نشد: ChatGPT به ورود دوباره نیاز دارد. پنجره مرورگر روی صفحه لاگین باز است — وارد شوید و پرامپت را دوباره بفرستید.',
-  sessionExpired: 'نشست دیپ‌سیک منقضی شد — پنجرهٔ مرورگر روی صفحهٔ ورود دیپ‌سیک باز است. دوباره وارد شوید؛ مگنوم به‌صورت خودکار متصل می‌شود.',
-  sessionExpiredTask: 'تسک ارسال نشد: دیپ‌سیک به ورود دوباره نیاز دارد. پنجرهٔ مرورگر روی صفحهٔ لاگین باز است — پس از ورود، پرامپت را دوباره بفرستید.',
-  reloginDone: 'ورود دوبارهٔ دیپ‌سیک تأیید شد — موتور به پس‌زمینه برگشت. می‌توانید پرامپت را دوباره بفرستید.'
+    needWorkspace: 'لطفاً ابتدا یک پوشه پروژه (\u200FWorkspace\u200F) انتخاب کنید.',
+    syncing: 'در حال بررسی و همگام‌سازی گفتگو...',
+    chatLoaded: 'گفتگو با موفقیت بارگذاری شد.',
+    syncDone: (n) => n > 0 ? `تعداد \u200F${n}\u200F گفتگوی حذف‌شده از حافظه محلی پاک‌سازی شد.` : 'تمام گفتگوهای محلی همگام هستند.',
+    cfChallenge: 'تأییدیه امنیتی \u200FCloudflare\u200F فعال شده است. لطفاً پنجره تأیید را باز کرده و بررسی امنیتی را کامل کنید.',
+    captchaRequired: 'تأییدیه امنیتی (کپچا) برای \u200FDeepSeek\u200F ظاهر شد. پنجره تأیید باز شده است؛ پس از تکمیل آن، پیام خود را دوباره ارسال کنید.',
+    captchaWait: 'تأییدیه امنیتی (کپچا) در پنجره \u200FDeepSeek\u200F باز شد — لطفاً آن را حل کنید تا مگنوم به‌صورت خودکار ادامه دهد.',
+    captchaResolved: 'تأییدیه امنیتی با موفقیت انجام شد — در حال ادامه عملیات...',
+    suspended: (notice) => `حساب کاربری \u200FDeepSeek\u200F موقتاً محدود شده است (\u200F${notice}\u200F). لطفاً قطع اتصال کرده و با حساب دیگری وارد شوید.`,
+    notLoggedIn: 'وارد حساب کاربری \u200FDeepSeek\u200F نشده‌اید یا نشست شما منقضی شده است.',
+    noInput: 'ورود انجام شده است، اما نشست مدل هنوز در حال آماده‌سازی است. چند لحظه صبر کنید.',
+    loading: 'نشست هنوز در حال بارگذاری است.',
+    closed: 'اتصال با سرویس مدل فعال نیست یا پنجره آن بسته شده است.',
+    ready: 'اتصال برقرار است و \u200FDeepSeek\u200F آماده دریافت دستور می‌باشد.',
+    errCheck: (m) => `خطا در بررسی اتصال: \u200F${m}\u200F`,
+    previousPurged: 'گفتگوی قبلی دیگر در دسترس نبود؛ یک گفتگوی جدید آغاز شد.',
+    previousPurgedAborted: 'گفتگوی قبلی دیگر در دسترس نبود و گفتگوی تازه‌ای باز شد. لطفاً پیام خود را دوباره بفرستید.',
+    geminiGoogleLogin: 'پنجره ورود گوگل برای \u200FGemini\u200F باز شد. با حساب گوگل خود وارد شوید تا اتصال به‌طور خودکار برقرار شود.',
+    geminiNotLoggedIn: 'حساب \u200FGemini\u200F هنوز وارد نشده است. لطفاً در پنجره بازشده ورود به حساب گوگل را کامل کنید.',
+    geminiNoInput: 'نشست \u200FGemini\u200F هنوز در حال آماده‌سازی است. چند لحظه صبر کنید.',
+    geminiReady: 'اتصال برقرار است و \u200FGemini\u200F آماده دریافت دستور می‌باشد.',
+    geminiNotConnected: 'سرویس \u200FGemini\u200F متصل نیست. از منوی انتخاب مدل در پایین کادر گفتگو اتصال را برقرار کنید.',
+    chatgptLogin: 'پنجره ورود برای \u200FChatGPT\u200F باز شد. وارد حساب کاربری خود شوید تا اتصال به‌طور خودکار برقرار شود.',
+    chatgptNoInput: 'نشست \u200FChatGPT\u200F هنوز در حال آماده‌سازی است. چند لحظه صبر کنید.',
+    chatgptReady: 'اتصال برقرار است و \u200FChatGPT\u200F آماده دریافت دستور می‌باشد.',
+    chatgptNotConnected: 'سرویس \u200FChatGPT\u200F متصل نیست. از منوی انتخاب مدل در پایین کادر گفتگو اتصال را برقرار کنید.',
+    chatgptSessionExpiredTask: 'پیام ارسال نشد: \u200FChatGPT\u200F به ورود دوباره نیاز دارد. پس از ورود در پنجره بازشده، پیام خود را دوباره بفرستید.',
+    sessionExpired: 'نشست \u200FDeepSeek\u200F منقضی شد. پنجره ورود باز شده است؛ دوباره وارد شوید تا اتصال به‌صورت خودکار برقرار شود.',
+    sessionExpiredTask: 'پیام ارسال نشد: \u200FDeepSeek\u200F به ورود دوباره نیاز دارد. پس از ورود در پنجره بازشده، پیام خود را دوباره بفرستید.',
+    reloginDone: 'ورود دوباره به \u200FDeepSeek\u200F تأیید شد. اکنون می‌توانید پیام خود را دوباره ارسال کنید.',
+    finalizing: 'در حال نهایی‌سازی اتصال...',
+    readyEngine: (p) => `آماده! اتصال \u200F${p}\u200F برقرار شد.`,
+    openingWindow: 'در حال باز کردن پنجره...',
+    openingWindowProvider: (p) => `در حال باز کردن پنجره \u200F${p}\u200F...`,
+    windowOpened: 'پنجره ورود باز است.',
+    windowShown: (p) => `پنجره \u200F${p}\u200F نمایش داده شد.`,
+    windowHidden: 'پنجره در پس‌زمینه قرار گرفت.',
+    disconnectedKept: (p) => `اتصال از \u200F${p}\u200F قطع شد. اطلاعات نشست شما برای اتصال سریع بعدی نگه داشته شد.`,
+    disconnectedCleared: (p) => `اتصال از \u200F${p}\u200F قطع شد و نشست ناقص پاک‌سازی گردید.`,
+    workspaceLoaded: (name) => `پروژه بارگذاری شد: \u200F${name}\u200F`,
+    workspaceScanErr: (m) => `خطا در اسکن پروژه: \u200F${m}\u200F`,
+    workspaceOpenErr: (m) => `خطا در باز کردن پروژه: \u200F${m}\u200F`,
+    folderErr: (m) => `خطا در باز کردن پوشه: \u200F${m}\u200F`,
+    scratchReady: 'محیط خالی پروژه آماده است — می‌توانید از صفر شروع کنید.',
+    scratchErr: (m) => `خطا در ایجاد محیط پروژه: \u200F${m}\u200F`,
+    autoConnecting: (p) => `در حال اتصال به \u200F${p}\u200F...`,
+    switchingTo: (p) => `در حال تغییر مدل به \u200F${p}\u200F برای این گفتگو...`,
+    providerReady: (p) => `اتصال \u200F${p}\u200F برقرار شد — آماده دریافت دستور.`,
+    preparingTask: 'در حال آماده‌سازی عملیات...',
+    readyForNewTask: 'آماده برای گفتگوی جدید.',
+    taskStopped: 'عملیات توسط کاربر متوقف شد.',
+    patchApproved: 'تغییرات توسط کاربر تأیید شد.',
+    patchRejected: 'تغییرات توسط کاربر رد شد.',
+    commandApproved: 'دستور توسط کاربر تأیید شد.',
+    commandRejected: 'دستور توسط کاربر رد شد.',
+    remoteMissingKept: (p) => `گفتگوی قبلی در \u200F${p}\u200F دیگر وجود ندارد — تاریخچه محلی حفظ شد.`,
+    syncNotConnected: 'اتصال فعال نیست؛ امکان همگام‌سازی وجود ندارد.',
+    uploadingAttachment: (name, p) => `در حال ارسال فایل \u200F${name}\u200F به \u200F${p}\u200F...`,
+    queuedUploaded: (n, p) => `تعداد \u200F${n}\u200F فایل صف‌شده به \u200F${p}\u200F ارسال شد.`,
+    openBrowserFailed: (m) => `خطا در باز کردن پنجره: \u200F${m}\u200F`,
+    handlerErr: (m) => `خطای غیرمنتظره: \u200F${m}\u200F`,
+    cmdAlreadyRunning: 'یک دستور در حال اجراست — برای توقف \u200FCtrl+C\u200F بزنید.'
   }
 };
 function tS(key, ...args) {
@@ -368,20 +445,32 @@ async function pushRecentWorkspace(p) {
 }
 loadRecentWorkspaces();
 
+let visibilityQueue = Promise.resolve();
 function toggleBrowserVisibility(state = 0, profileName = path.basename(PROFILE_DIR)) {
+  const safeProfile = String(profileName || '').replace(/'/g, "''");
   const psCode = `
 Add-Type -TypeDefinition @"
 using System;
 using System.Runtime.InteropServices;
 public class Win32 {
+    [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
     public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
     [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+    [DllImport("user32.dll")] public static extern int GetWindowTextLength(IntPtr hWnd);
+    [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+    [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr hWnd);
+    [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
     [DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);
+    [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hWnd);
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+    [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+    [DllImport("user32.dll")] public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+    [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
 }
 "@
-$targetPids = (Get-CimInstance Win32_Process -Filter "Name='msedge.exe' OR Name='chrome.exe'" | Where-Object { $_.CommandLine -match '${profileName}' } | Select-Object -ExpandProperty ProcessId)
+$targetPids = (Get-CimInstance Win32_Process -Filter "Name='msedge.exe' OR Name='chrome.exe'" | Where-Object { $_.CommandLine -like '*${safeProfile}*' } | Select-Object -ExpandProperty ProcessId)
 $found = $false
 for ($i=0; $i -lt 20; $i++) {
     $found = $false
@@ -390,18 +479,43 @@ for ($i=0; $i -lt 20; $i++) {
         $wpid = 0
         [Win32]::GetWindowThreadProcessId($hWnd, [ref]$wpid) | Out-Null
         if ($targetPids -contains $wpid) {
-            [Win32]::ShowWindowAsync($hWnd, ${state}) | Out-Null
-            if (${state} -eq 5) { [Win32]::SetForegroundWindow($hWnd) | Out-Null }
-            $script:found = $true
+            $len = [Win32]::GetWindowTextLength($hWnd)
+            $r = New-Object Win32+RECT
+            [Win32]::GetWindowRect($hWnd, [ref]$r) | Out-Null
+            $w = $r.Right - $r.Left
+            $h = $r.Bottom - $r.Top
+            if ($len -gt 0 -and $w -gt 120 -and $h -gt 120) {
+                if (${state} -eq 5) {
+                    if ([Win32]::IsIconic($hWnd)) { [Win32]::ShowWindow($hWnd, 9) | Out-Null }
+                    else { [Win32]::ShowWindow($hWnd, 5) | Out-Null }
+                    $fg = [Win32]::GetForegroundWindow()
+                    $fgTid = 0
+                    if ($fg -ne [IntPtr]::Zero) { [Win32]::GetWindowThreadProcessId($fg, [ref]$fgTid) | Out-Null }
+                    $curTid = [Win32]::GetCurrentThreadId()
+                    if ($fgTid -ne 0 -and $fgTid -ne $curTid) { [Win32]::AttachThreadInput($curTid, $fgTid, $true) | Out-Null }
+                    [Win32]::SetWindowPos($hWnd, [IntPtr](-1), 0, 0, 0, 0, 0x0001 -bor 0x0002 -bor 0x0040) | Out-Null
+                    [Win32]::SetWindowPos($hWnd, [IntPtr](-2), 0, 0, 0, 0, 0x0001 -bor 0x0002 -bor 0x0040) | Out-Null
+                    [Win32]::BringWindowToTop($hWnd) | Out-Null
+                    [Win32]::SetForegroundWindow($hWnd) | Out-Null
+                    if ($fgTid -ne 0 -and $fgTid -ne $curTid) { [Win32]::AttachThreadInput($curTid, $fgTid, $false) | Out-Null }
+                } else {
+                    [Win32]::ShowWindowAsync($hWnd, ${state}) | Out-Null
+                }
+                $script:found = $true
+            }
         }
         return $true
     }, [IntPtr]::Zero) | Out-Null
     if ($found) { break }
-    Start-Sleep -Milliseconds 500
+    Start-Sleep -Milliseconds 300
 }
-  `;
+`;
   const base64Code = Buffer.from(psCode, 'utf16le').toString('base64');
-  exec(`powershell -NoProfile -WindowStyle Hidden -EncodedCommand ${base64Code}`);
+  const run = visibilityQueue.then(() => new Promise((resolve) => {
+    exec(`powershell -NoProfile -WindowStyle Hidden -EncodedCommand ${base64Code}`, { windowsHide: true }, () => resolve());
+  }));
+  visibilityQueue = run.catch(() => {});
+  return run;
 }
 
 
@@ -887,25 +1001,36 @@ async function detectDeepSeekAuthState(page) {
     const flags = await page.evaluate(() => {
       const ph = (el) => (el.getAttribute && (el.getAttribute('placeholder') || '')) || '';
       const inputs = Array.from(document.querySelectorAll('input'));
-      const phoneOrEmail = inputs.some(i => /phone number|email/i.test(ph(i)));
+      const phoneOrEmail = inputs.some(i => /phone|email|mobile/i.test(ph(i)));
       const password = inputs.some(i => i.type === 'password' || /password/i.test(ph(i)));
+      const codeInput = inputs.some(i => /code|otp|verification/i.test(ph(i)));
       const loginBtn = Array.from(document.querySelectorAll('div[role="button"], button, a')).some(el => {
         const t = (el.innerText || el.textContent || '').trim();
-        return /^(log in|sign in)$/i.test(t);
+        return /^(log in|sign in|log in with google|continue with google|send code)$/i.test(t);
       });
       const authForm = !!document.querySelector(
         '.ds-auth-form-wrapper, .ds-sign-in-form-wrapper, .ds-sign-in-form__main'
       );
       const rawToken = localStorage.getItem('userToken');
       let hasToken = false;
-      if (rawToken) { try { const p = JSON.parse(rawToken); hasToken = !!(p && (p.value || p)); } catch { hasToken = rawToken.length > 10; } }
+      if (rawToken) {
+        try { const p = JSON.parse(rawToken); hasToken = !!(p && (p.value || p)); }
+        catch { hasToken = rawToken.length > 10; }
+      }
       const hasChatInput = !!document.querySelector('#chat-input, textarea#chat-input, textarea, [contenteditable="true"]');
-      return { phoneOrEmail, password, loginBtn, authForm, hasToken, hasChatInput };
+      return { phoneOrEmail, password, codeInput, loginBtn, authForm, hasToken, hasChatInput };
     }).catch(() => null);
+
     if (!flags) return { ok: false, status: 'loading', url };
-    const authForm = flags.authForm;
-    const onLoginPage = /\/sign_in|\/login/i.test(url) || (flags.phoneOrEmail && flags.password) || (authForm && flags.loginBtn);
-    if (onLoginPage || (!flags.hasToken && flags.loginBtn && !flags.hasChatInput)) return { ok: false, status: 'login_page', url };
+
+    const onLoginPage =
+      /\/sign_in|\/login/i.test(url) ||
+      (flags.phoneOrEmail && (flags.password || flags.codeInput || flags.loginBtn)) ||
+      (flags.authForm && (flags.loginBtn || flags.phoneOrEmail || flags.password)) ||
+      (!flags.hasToken && flags.loginBtn && !flags.hasChatInput) ||
+      (!flags.hasChatInput && flags.authForm);
+
+    if (onLoginPage) return { ok: false, status: 'login_page', url };
     if (!flags.hasChatInput) return { ok: false, status: 'no_input', url };
     return { ok: true, status: 'ready', url };
   } catch (e) {
@@ -913,13 +1038,118 @@ async function detectDeepSeekAuthState(page) {
   }
 }
 
+async function waitForDeepSeekAuthSettle(page, timeoutMs = 5000) {
+  const deadline = Date.now() + timeoutMs;
+  let last = { ok: false, status: 'loading', url: '' };
+  while (Date.now() < deadline) {
+    if (!page || page.isClosed()) return { ok: false, status: 'closed', url: '' };
+    last = await detectDeepSeekAuthState(page);
+    if (last.ok || last.status === 'login_page') return last;
+    await new Promise(r => setTimeout(r, 350));
+  }
+  return last;
+}
+
+function killDeepSeekProfileProcesses() {
+  if (process.platform !== 'win32') return Promise.resolve();
+  return new Promise((resolve) => {
+    // فقط پروسس‌هایی که دقیقا آرگومان magnum-profile دارند بسته می‌شوند (نه gemini-profile و نه chatgpt-profile)
+    const psCode = `
+Get-CimInstance Win32_Process -Filter "Name='msedge.exe' OR Name='chrome.exe'" |
+  Where-Object { $_.CommandLine -match '(^|[\\\\/"=\\s])magnum-profile([\\\\/"\\s]|$)' } |
+  ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+`;
+    const b64 = Buffer.from(psCode, 'utf16le').toString('base64');
+    exec(`powershell -NoProfile -WindowStyle Hidden -EncodedCommand ${b64}`, { windowsHide: true, timeout: 8000 }, () => resolve());
+  });
+}
+
+async function wipeDeepSeekProfile(reason = 'login_page') {
+  const resolvedTarget = path.resolve(PROFILE_DIR);
+  const resolvedGemini = path.resolve(GEMINI_PROFILE_DIR);
+  const resolvedChatGpt = path.resolve(CHATGPT_PROFILE_DIR);
+
+  // لایه امنیتی قطعی: تحت هیچ شرایطی به پروفایل جمنای یا چت‌جی‌پی‌تی دست نزند
+  if (
+    resolvedTarget === resolvedGemini ||
+    resolvedTarget === resolvedChatGpt ||
+    path.basename(resolvedTarget) !== 'magnum-profile'
+  ) {
+    console.error('🛡️ [SAFETY ABORT] Refused to delete unexpected profile path:', resolvedTarget);
+    return false;
+  }
+
+  if (loginCheckTimer) {
+    clearInterval(loginCheckTimer);
+    loginCheckTimer = null;
+  }
+
+  isResettingDeepSeekProfile = true;
+  try {
+    if (browserContext) {
+      if (activePage) activePage.__ignoreCloseCleanup = true;
+      try { await browserContext.close(); } catch (e) { console.warn('DeepSeek close warning:', e && e.message); }
+      browserContext = null;
+      activePage = null;
+    }
+
+    // فایل‌های استیج‌شده در کامپوزر برای تب جدید دیپ‌سیک دوباره صف شوند
+    for (const entry of staging.deepseek.entries.values()) {
+      entry.uploaded = false;
+      entry.status = 'queued';
+    }
+
+    let removed = false;
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      try {
+        await fs.rm(resolvedTarget, { recursive: true, force: true });
+        if (!fsSync.existsSync(resolvedTarget)) {
+          removed = true;
+          break;
+        }
+      } catch (err) {
+        console.warn(`[wipeDeepSeekProfile] attempt ${attempt} failed (${err.code || err.message})`);
+      }
+      await killDeepSeekProfileProcesses();
+      await new Promise(r => setTimeout(r, 400));
+    }
+
+    if (removed) {
+      deepSeekProfileFreshForLogin = false;
+      console.log(`🧹 DeepSeek profile completely deleted (${reason}): ${resolvedTarget}`);
+      logTerminal(`DeepSeek session reset (${reason}).`, 'sys');
+    } else {
+      console.warn(`⚠️ Could not completely delete DeepSeek profile: ${resolvedTarget}`);
+    }
+    return removed;
+  } finally {
+    isResettingDeepSeekProfile = false;
+  }
+}
+
 function attachDeepSeekPageHandlers(page) {
   if (!page) return;
+  page.on('framenavigated', (frame) => {
+    if (frame !== page.mainFrame()) return;
+    if (isResettingDeepSeekProfile || isParkingDeepSeek || isManualDeepSeekLogout || isLaunchingDeepSeek) return;
+    const u = frame.url() || '';
+    if (/\/sign_in|\/login/i.test(u) && !deepSeekProfileFreshForLogin) {
+      console.warn('🔐 [nav] DeepSeek navigated to login page — checking auth settle in 1500ms...');
+      setTimeout(async () => {
+        if (!activePage || activePage.isClosed()) return;
+        const auth = await detectDeepSeekAuthState(activePage);
+        if (auth.status === 'login_page') {
+          handleDeepSeekSessionExpired('nav_login').catch(() => {});
+        }
+      }, 1500);
+    }
+  });
   page.on('close', () => {
     activePage = null;
     browserContext = null;
     if (loginCheckTimer) { clearInterval(loginCheckTimer); loginCheckTimer = null; }
     deepseekStatus = 'disconnected';
+    if (activeProvider === 'deepseek') activeProvider = null;
     broadcastProviders();
   });
 }
@@ -927,54 +1157,81 @@ function attachDeepSeekPageHandlers(page) {
 function startLoginWatchdog() {
   if (loginCheckTimer) { clearInterval(loginCheckTimer); loginCheckTimer = null; }
   loginCheckTimer = setInterval(async () => {
-    if (!activePage || activePage.isClosed()) { clearInterval(loginCheckTimer); loginCheckTimer = null; return; }
-    const st = await detectDeepSeekAuthState(activePage);
-    if (st.ok) {
+    if (!activePage || activePage.isClosed() || (activeProvider && activeProvider !== 'deepseek')) {
+      clearInterval(loginCheckTimer); loginCheckTimer = null; return;
+    }
+    const diag = await diagnoseSession(activePage);
+    if (diag.ok) {
       clearInterval(loginCheckTimer);
       loginCheckTimer = null;
+      deepSeekProfileFreshForLogin = false;
       await switchToBackground();
       broadcast({ event: 'agent_status', text: tS('reloginDone') });
+    } else if (diag.status === 'suspended') {
+      clearInterval(loginCheckTimer);
+      loginCheckTimer = null;
+      broadcast({ event: 'error', message: diag.message });
+    } else if (diag.status === 'captcha' || diag.status === 'cloudflare') {
+      broadcast({ event: 'agent_status', text: tS('captchaWait') });
     }
-  }, 3000);
+  }, 2500);
 }
 
 let deepSeekRecoveryRunning = false;
 async function handleDeepSeekSessionExpired(source = 'check') {
+  if (activeProvider && activeProvider !== 'deepseek') return false;
   if (deepSeekRecoveryRunning) return true;
   deepSeekRecoveryRunning = true;
   try {
-    console.warn(`🔐 [${source}] DeepSeek session expired / window missing — recovery flow started.`);
-    
-    if (!browserContext || !activePage || activePage.isClosed()) {
-      try {
-        browserContext = await launchStealthContext(PROFILE_DIR, { headless: false });
-        activePage = await consolidateProviderTabs(browserContext, 'chat.deepseek.com');
-        attachDeepSeekPageHandlers(activePage);
-      } catch (e) {
-        broadcast({ event: 'error', message: tS('closed') });
-        return false;
-      }
+    console.warn(`🔐 [${source}] DeepSeek login page detected.`);
+
+    if (runningAgent && (activeProvider === 'deepseek' || !activeProvider)) {
+      try { runningAgent.stop(); } catch {}
+      runningAgent = null;
     }
-    
+
+    if (browserContext && activePage && !activePage.isClosed()) {
+      deepseekStatus = 'connecting';
+      activeProvider = 'deepseek';
+      broadcastProviders();
+      toggleBrowserVisibility(5);
+      if (activePage && !activePage.isClosed()) activePage.bringToFront().catch(() => {});
+      broadcast({ event: 'login_browser_opened', provider: 'deepseek', message: tS('sessionExpired') });
+      broadcast({ event: 'agent_status', text: tS('sessionExpired') });
+      startLoginWatchdog();
+      return true;
+    }
+
+    isLaunchingDeepSeek = true;
     try {
-      const st = await detectDeepSeekAuthState(activePage);
-      const url = activePage.url();
-      if (st.status === 'login_page' || st.status === 'closed') {
-        if (!/\/sign_in|\/login/i.test(url)) {
-          await activePage.goto(DEEPSEEK_LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: 15000 });
-          await activePage.waitForTimeout(800);
-        }
-      } else if (st.status === 'no_input' && !url.includes('chat.deepseek.com')) {
-        await activePage.goto('https://chat.deepseek.com/', { waitUntil: 'domcontentloaded', timeout: 15000 });
+      deepSeekProfileFreshForLogin = true;
+      browserContext = await launchStealthContext(PROFILE_DIR, { headless: false });
+      activePage = await consolidateProviderTabs(browserContext, 'chat.deepseek.com');
+      attachDeepSeekPageHandlers(activePage);
+      if (!/chat\.deepseek\.com/i.test(activePage.url())) {
+        await activePage.goto(DEEPSEEK_LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: 20000 });
+        await activePage.waitForTimeout(800);
       }
-    } catch (e) { console.warn('login navigate warning:', e.message); }
-    
-    deepseekStatus = 'connecting'; activeProvider = 'deepseek'; broadcastProviders();
+    } catch (e) {
+      deepSeekProfileFreshForLogin = false;
+      deepseekStatus = 'disconnected';
+      if (activeProvider === 'deepseek') activeProvider = null;
+      broadcastProviders();
+      broadcast({ event: 'error', message: tS('closed') });
+      return false;
+    } finally {
+      isLaunchingDeepSeek = false;
+    }
+
+    deepseekStatus = 'connecting';
+    activeProvider = 'deepseek';
+    broadcastProviders();
     toggleBrowserVisibility(5);
+    if (activePage && !activePage.isClosed()) activePage.bringToFront().catch(() => {});
     broadcast({ event: 'login_browser_opened', provider: 'deepseek', message: tS('sessionExpired') });
     broadcast({ event: 'agent_status', text: tS('sessionExpired') });
-    logTerminal('DeepSeek session expired — window shown on login page; waiting for user login.', 'err');
-    
+    logTerminal('DeepSeek browser brought to front on login page.', 'err');
+
     startLoginWatchdog();
     return true;
   } finally {
@@ -985,12 +1242,19 @@ async function handleDeepSeekSessionExpired(source = 'check') {
 
 async function diagnoseSession(page) {
   if (!page || page.isClosed()) {
+    lastDeepSeekDiagStatus = 'closed';
     return { ok: false, status: 'closed', message: tS('closed') };
   }
 
   try {
     const url = page.url();
     const title = await page.title().catch(() => '');
+
+    const earlyAuth = await detectDeepSeekAuthState(page);
+    if (earlyAuth.status === 'login_page') {
+      lastDeepSeekDiagStatus = 'not_logged_in';
+      return { ok: false, status: 'not_logged_in', message: tS('sessionExpired'), url, title };
+    }
 
     
     const isCloudflare = await page.evaluate(() => {
@@ -1013,6 +1277,7 @@ async function diagnoseSession(page) {
     }).catch(() => false);
 
     if (isCloudflare) {
+      lastDeepSeekDiagStatus = 'cloudflare';
       return {
         ok: false,
         status: 'cloudflare',
@@ -1051,6 +1316,7 @@ async function diagnoseSession(page) {
     if (suspension && suspension.inBody) {
       
       if (!suspension.composerUsable) {
+        lastDeepSeekDiagStatus = 'suspended';
         return { ok: false, status: 'suspended', message: tS('suspended', suspension.notice), url, title };
       }
       
@@ -1068,26 +1334,41 @@ async function diagnoseSession(page) {
         return s.display !== 'none' && s.visibility !== 'hidden' && s.opacity !== '0';
       })();
 
-      if (isInputReady && !isModalVisible) {
-        return false;
-      }
+      const isElemTrulyVisible = (el) => {
+        if (!el) return false;
+        let cur = el;
+        while (cur && cur.nodeType === 1) {
+          if (cur.getAttribute('aria-hidden') === 'true') return false;
+          const s = window.getComputedStyle(cur);
+          if (s.display === 'none' || s.visibility === 'hidden' || parseFloat(s.opacity) === 0) return false;
+          if (s.zIndex && parseInt(s.zIndex, 10) < 0) return false;
+          cur = cur.parentElement;
+        }
+        const r = el.getBoundingClientRect();
+        if (!r || r.width < 10 || r.height < 10) return false;
+        const vw = window.innerWidth || 1280;
+        const vh = window.innerHeight || 800;
+        return r.bottom > 0 && r.right > 0 && r.top < vh && r.left < vw;
+      };
+
+      const cfOverlay = document.querySelector('#cf-overlay');
+      const dsPrompt = document.querySelector('.ds-hcaptcha-prompt');
+      if (isElemTrulyVisible(cfOverlay) || isElemTrulyVisible(dsPrompt)) return true;
 
       const iframes = Array.from(document.querySelectorAll('iframe'));
       return iframes.some(f => {
         const src = (f.getAttribute('src') || '').toLowerCase();
         const title = (f.getAttribute('title') || '').toLowerCase();
-        const isCaptchaSrc = src.includes('hcaptcha.com') || src.includes('challenges.cloudflare.com') || title.includes('hcaptcha');
+        const isCaptchaSrc = src.includes('hcaptcha.com') || src.includes('challenges.cloudflare.com') || title.includes('hcaptcha') || title.includes('cloudflare');
         if (!isCaptchaSrc) return false;
-
         const rect = f.getBoundingClientRect();
         if (rect.width < 120 || rect.height < 120) return false;
-
-        const s = window.getComputedStyle(f);
-        return s.display !== 'none' && s.visibility !== 'hidden' && s.opacity !== '0' && f.offsetParent !== null;
+        return isElemTrulyVisible(f);
       });
     }).catch(() => false);
 
     if (hasCaptcha) {
+      lastDeepSeekDiagStatus = 'captcha';
       return {
         ok: false,
         status: 'captcha',
@@ -1100,12 +1381,15 @@ async function diagnoseSession(page) {
   
   const auth = await detectDeepSeekAuthState(page);
   if (!auth.ok) {
-    if (auth.status === 'login_page') return { ok: false, status: 'not_logged_in', message: tS('sessionExpired'), url, title };
-    if (auth.status === 'no_input')  return { ok: false, status: 'no_input', message: tS('noInput'), url, title };
+    if (auth.status === 'login_page') { lastDeepSeekDiagStatus = 'not_logged_in'; return { ok: false, status: 'not_logged_in', message: tS('sessionExpired'), url, title }; }
+    if (auth.status === 'no_input')  { lastDeepSeekDiagStatus = 'no_input'; return { ok: false, status: 'no_input', message: tS('noInput'), url, title }; }
+    lastDeepSeekDiagStatus = 'loading';
     return { ok: false, status: 'loading', message: tS('loading'), url, title };
   }
+  lastDeepSeekDiagStatus = 'ready';
   return { ok: true, status: 'ready', message: tS('ready'), url, title };
   } catch (err) {
+    lastDeepSeekDiagStatus = 'error';
     return { ok: false, status: 'error', message: tS('errCheck', err.message) };
   }
 }
@@ -1125,19 +1409,20 @@ async function switchToBackground() {
     clearInterval(loginCheckTimer);
     loginCheckTimer = null;
   }
+  if (activeProvider && activeProvider !== 'deepseek') return;
   broadcast({ event: 'agent_status', text: 'Making browser invisible (Windows API)...' });
-  
-  
+
   toggleBrowserVisibility(0);
   logTerminal('Browser hidden; engine running in background.', 'sys');
-  
-    if (activePage && !activePage.isClosed()) {
+
+  if (activePage && !activePage.isClosed()) {
     const diag = await diagnoseSession(activePage);
     if (diag.ok) {
+      await parkOtherProviders('deepseek');
+      setProviderState('deepseek', 'connected');
       broadcast({ event: 'logged_in', email: 'DeepSeek Active (Invisible)' });
-      broadcast({ event: 'agent_status', text: 'Ready! Invisible engine active.' });
-      deepseekStatus = 'connected'; activeProvider = 'deepseek'; broadcastProviders();
-      
+      broadcast({ event: 'agent_status', text: tS('readyEngine', 'DeepSeek') });
+
       const driver = new DeepSeekDriver(activePage);
       const dtState = await driver.getDeepThinkState();
       if (typeof dtState === 'boolean') {
@@ -1148,60 +1433,131 @@ async function switchToBackground() {
 }
 
 async function openVisibleBrowser() {
-  if (loginCheckTimer) clearInterval(loginCheckTimer);
-  if (geminiContext) await parkAndCloseGemini();
-  deepseekStatus = 'connecting'; activeProvider = 'deepseek'; broadcastProviders();
-  broadcast({ event: 'agent_status', text: 'Showing browser window...' });
+  return runExclusiveProviderOp(async () => {
+    if (loginCheckTimer) clearInterval(loginCheckTimer);
+    await parkOtherProviders('deepseek');
+    setProviderState('deepseek', 'connecting');
+    broadcast({ event: 'agent_status', text: tS('openingWindow') });
 
-  if (!browserContext) {
-    browserContext = await launchStealthContext(PROFILE_DIR, { headless: false });
-    activePage = await consolidateProviderTabs(browserContext, 'chat.deepseek.com');
-    
-    activePage.on('close', () => {
-      activePage = null;
-      browserContext = null;
-      if (loginCheckTimer) clearInterval(loginCheckTimer);
-    });
-    if (!activePage.url().includes('chat.deepseek.com')) {
-      await activePage.goto('https://chat.deepseek.com/');
+    if (!browserContext || !activePage || activePage.isClosed()) {
+      const profileExisted = fsSync.existsSync(PROFILE_DIR);
+      deepSeekProfileFreshForLogin = !profileExisted;
+      isLaunchingDeepSeek = true;
+      try {
+        browserContext = await launchStealthContext(PROFILE_DIR, { headless: false });
+        activePage = await consolidateProviderTabs(browserContext, 'chat.deepseek.com');
+        attachDeepSeekPageHandlers(activePage);
+        toggleBrowserVisibility(0);
+        if (!activePage.url().includes('chat.deepseek.com')) {
+          await activePage.goto('https://chat.deepseek.com/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+        }
+        await waitForDeepSeekAuthSettle(activePage, 5000);
+      } finally {
+        isLaunchingDeepSeek = false;
+      }
     }
-  }
 
-  
-  toggleBrowserVisibility(5);
-  broadcast({ event: 'login_browser_opened', provider: 'deepseek', message: 'Browser window is open.' });
-  logTerminal('Stealth browser window shown on desktop.', 'sys');
-  const st = await detectDeepSeekAuthState(activePage);
-  if (st.ok) { await switchToBackground(); }
-  else { await handleDeepSeekSessionExpired('open_browser'); }
+    const diag = await diagnoseSession(activePage);
+    if (diag.ok) {
+      deepSeekProfileFreshForLogin = false;
+      await switchToBackground();
+    } else if (diag.status === 'not_logged_in') {
+      await handleDeepSeekSessionExpired('open_browser');
+    } else {
+      toggleBrowserVisibility(5);
+      broadcast({ event: 'login_browser_opened', provider: 'deepseek', message: diag.message || 'Browser window is open.' });
+      logTerminal('Stealth browser window shown on desktop.', 'sys');
+      startLoginWatchdog();
+    }
+  });
 }
 
 function broadcastProviders() {
   broadcast({ event: 'providers_status', deepseek: deepseekStatus, gemini: geminiStatus, chatgpt: chatgptStatus, active: activeProvider });
 }
+
+let providerOpChain = Promise.resolve();
+function runExclusiveProviderOp(fn) {
+  const run = providerOpChain.then(fn, fn);
+  providerOpChain = run.catch(() => {});
+  return run;
+}
+
+function setProviderState(provider, status) {
+  if (status === 'connected' || status === 'connecting') {
+    activeProvider = provider;
+    if (provider !== 'deepseek') deepseekStatus = 'disconnected';
+    if (provider !== 'gemini') geminiStatus = 'disconnected';
+    if (provider !== 'chatgpt') chatgptStatus = 'disconnected';
+  }
+  if (provider === 'deepseek') deepseekStatus = status;
+  else if (provider === 'gemini') geminiStatus = status;
+  else if (provider === 'chatgpt') chatgptStatus = status;
+
+  if (status === 'disconnected' && activeProvider === provider) {
+    activeProvider = null;
+  }
+  broadcastProviders();
+}
+
+async function parkOtherProviders(keep) {
+  if (keep !== 'deepseek') {
+    if (loginCheckTimer) { clearInterval(loginCheckTimer); loginCheckTimer = null; }
+    if (browserContext || deepseekStatus !== 'disconnected') {
+      await parkAndCloseDeepSeek();
+    }
+  }
+  if (keep !== 'gemini') {
+    if (geminiLoginCheckTimer) { clearInterval(geminiLoginCheckTimer); geminiLoginCheckTimer = null; }
+    if (geminiContext || geminiStatus !== 'disconnected') {
+      await parkAndCloseGemini();
+    }
+  }
+  if (keep !== 'chatgpt') {
+    if (chatgptLoginCheckTimer) { clearInterval(chatgptLoginCheckTimer); chatgptLoginCheckTimer = null; }
+    if (chatgptContext || chatgptStatus !== 'disconnected') {
+      await parkAndCloseChatGpt();
+    }
+  }
+}
+
 async function parkAndCloseDeepSeek() {
   clearStagingState('deepseek');
-  if (runningAgent) { runningAgent.stop(); runningAgent = null; }
+  if (runningAgent && (activeProvider === 'deepseek' || !activeProvider)) { runningAgent.stop(); runningAgent = null; }
   if (loginCheckTimer) { clearInterval(loginCheckTimer); loginCheckTimer = null; }
-  if (browserContext) {
-    try { if (activePage && !activePage.isClosed()) await new DeepSeekDriver(activePage).parkTab(); } catch {}
-    try { await browserContext.close(); } catch {}
-    browserContext = null; activePage = null;
+  isParkingDeepSeek = true;
+  try {
+    if (browserContext) {
+      if (activePage) activePage.__ignoreCloseCleanup = true;
+      try { if (activePage && !activePage.isClosed()) await new DeepSeekDriver(activePage).parkTab(); } catch {}
+      try { await browserContext.close(); } catch {}
+      browserContext = null; activePage = null;
+    }
+    deepSeekProfileFreshForLogin = false;
+    deepseekStatus = 'disconnected';
+    broadcast({ event: 'logged_out' });
+    logTerminal('DeepSeek parked & closed to free RAM.', 'sys');
+  } finally {
+    isParkingDeepSeek = false;
   }
-  deepseekStatus = 'disconnected';
-  broadcast({ event: 'logged_out' });
-  logTerminal('DeepSeek parked & closed to free RAM (Gemini takes over).', 'sys');
 }
 async function parkAndCloseGemini() {
   clearStagingState('gemini');
+  if (runningAgent && activeProvider === 'gemini') {
+    try { runningAgent.stop(); } catch {}
+    runningAgent = null;
+    pendingPatch = null;
+    pendingCommand = null;
+  }
   if (geminiLoginCheckTimer) { clearInterval(geminiLoginCheckTimer); geminiLoginCheckTimer = null; }
   if (geminiContext) {
     try { await geminiContext.close(); } catch {}
     geminiContext = null; activeGeminiPage = null;
   }
   geminiStatus = 'disconnected';
+  if (activeProvider === 'gemini') activeProvider = null;
   broadcast({ event: 'gemini_logged_out' });
-  logTerminal('Gemini closed to free RAM (DeepSeek takes over).', 'sys');
+  logTerminal('Gemini closed to free RAM.', 'sys');
 }
 async function diagnoseGeminiSession(page) {
   if (!page || page.isClosed()) return { ok: false, status: 'closed', message: tS('closed') };
@@ -1237,30 +1593,25 @@ function switchGeminiToBackground() {
 // ◄◄◄ NEW: Central provider-switch logic ►►►
 let providerSwitchInProgress = false;
 
-async function ensureProviderConnected(provider) {
-  let waitCount = 0;
-  while (providerSwitchInProgress && waitCount < 20) { await new Promise(r => setTimeout(r, 500)); waitCount++; }
+function ensureProviderConnected(provider) {
+  return runExclusiveProviderOp(() => _ensureProviderConnectedImpl(provider));
+}
 
+async function _ensureProviderConnectedImpl(provider) {
   const isActive = (p) =>
     p === 'gemini' ? (activeGeminiPage && !activeGeminiPage.isClosed() && geminiStatus === 'connected') :
     p === 'chatgpt' ? (activeChatGptPage && !activeChatGptPage.isClosed() && chatgptStatus === 'connected') :
     (activePage && !activePage.isClosed() && deepseekStatus === 'connected');
 
-  const parkOthers = async (keep) => {
-    if (keep !== 'deepseek' && browserContext) await parkAndCloseDeepSeek();
-    if (keep !== 'gemini' && geminiContext) await parkAndCloseGemini();
-    if (keep !== 'chatgpt' && chatgptContext) await parkAndCloseChatGpt();
-  };
-
   if (isActive(provider)) {
-    await parkOthers(provider);
+    await parkOtherProviders(provider);
     activeProvider = provider; broadcastProviders();
     return { ok: true };
   }
 
   providerSwitchInProgress = true;
   try {
-    await parkOthers(provider);
+    await parkOtherProviders(provider);
 
     if (provider === 'chatgpt') {
       if (!activeChatGptPage || activeChatGptPage.isClosed()) {
@@ -1338,21 +1689,37 @@ async function ensureProviderConnected(provider) {
 
     // deepseek
     if (!activePage || activePage.isClosed()) {
-      if (!browserContext) browserContext = await launchStealthContext(PROFILE_DIR, { headless: false });
-      activePage = await consolidateProviderTabs(browserContext, 'chat.deepseek.com');
-      attachDeepSeekPageHandlers(activePage);
-      if (!activePage.url().includes('chat.deepseek.com')) {
-        await activePage.goto('https://chat.deepseek.com/', { waitUntil: 'domcontentloaded', timeout: 15000 });
+      const profileExisted = fsSync.existsSync(PROFILE_DIR);
+      deepSeekProfileFreshForLogin = !profileExisted;
+      isLaunchingDeepSeek = true;
+      try {
+        if (!browserContext) browserContext = await launchStealthContext(PROFILE_DIR, { headless: false });
+        activePage = await consolidateProviderTabs(browserContext, 'chat.deepseek.com');
+        attachDeepSeekPageHandlers(activePage);
+        toggleBrowserVisibility(0);
+        if (!activePage.url().includes('chat.deepseek.com')) {
+          await activePage.goto('https://chat.deepseek.com/', { waitUntil: 'domcontentloaded', timeout: 15000 });
+        }
+        await waitForDeepSeekAuthSettle(activePage, 5000);
+      } finally {
+        isLaunchingDeepSeek = false;
       }
     }
     toggleBrowserVisibility(0, path.basename(PROFILE_DIR));
     const diag = await diagnoseSession(activePage);
-    if (diag.ok) { deepseekStatus = 'connected'; activeProvider = 'deepseek'; broadcastProviders(); flushStaging('deepseek').catch(() => {}); return { ok: true }; }
+    if (diag.ok) {
+      deepSeekProfileFreshForLogin = false;
+      deepseekStatus = 'connected'; activeProvider = 'deepseek'; broadcastProviders();
+      flushStaging('deepseek').catch(() => {});
+      return { ok: true };
+    }
     deepseekStatus = 'connecting'; activeProvider = 'deepseek'; broadcastProviders();
     if (diag.status === 'not_logged_in' || diag.status === 'login_page' || diag.status === 'no_input') {
       await handleDeepSeekSessionExpired('ensure_provider');
       return { ok: false, message: tS('sessionExpired') };
     }
+    toggleBrowserVisibility(5);
+    startLoginWatchdog();
     return { ok: false, message: diag.message };
   } finally {
     providerSwitchInProgress = false;
@@ -1362,6 +1729,12 @@ async function ensureProviderConnected(provider) {
 
 async function parkAndCloseChatGpt() {
   clearStagingState('chatgpt');
+  if (runningAgent && activeProvider === 'chatgpt') {
+    try { runningAgent.stop(); } catch {}
+    runningAgent = null;
+    pendingPatch = null;
+    pendingCommand = null;
+  }
   if (chatgptLoginCheckTimer) { clearInterval(chatgptLoginCheckTimer); chatgptLoginCheckTimer = null; }
   if (chatgptContext) {
     try { if (activeChatGptPage && !activeChatGptPage.isClosed()) await new ChatGptDriver(activeChatGptPage).parkTab(); } catch {}
@@ -1409,12 +1782,14 @@ function switchChatGptToBackground() {
 function startChatGptLoginWatchdog() {
   if (chatgptLoginCheckTimer) clearInterval(chatgptLoginCheckTimer);
   chatgptLoginCheckTimer = setInterval(async () => {
-    if (!activeChatGptPage || activeChatGptPage.isClosed()) { clearInterval(chatgptLoginCheckTimer); chatgptLoginCheckTimer = null; return; }
+    if (!activeChatGptPage || activeChatGptPage.isClosed() || (activeProvider && activeProvider !== 'chatgpt')) {
+      clearInterval(chatgptLoginCheckTimer); chatgptLoginCheckTimer = null; return;
+    }
     const d = await diagnoseChatGptSession(activeChatGptPage);
     if (d.ok) {
       clearInterval(chatgptLoginCheckTimer); chatgptLoginCheckTimer = null;
-      chatgptStatus = 'connected'; activeProvider = 'chatgpt';
-      broadcastProviders();
+      await parkOtherProviders('chatgpt');
+      setProviderState('chatgpt', 'connected');
       flushStaging('chatgpt').catch(() => {});
       broadcast({ event: 'chatgpt_logged_in', message: d.message });
       switchChatGptToBackground();
@@ -1427,13 +1802,11 @@ function startChatGptLoginWatchdog() {
   }, 3000);
 }
 
-let chatgptOpenInProgress = null;
-async function openChatGptBrowser() {
-  if (chatgptOpenInProgress) return chatgptOpenInProgress;
-  chatgptOpenInProgress = (async () => {
+function openChatGptBrowser() {
+  return runExclusiveProviderOp(async () => {
     if (chatgptLoginCheckTimer) clearInterval(chatgptLoginCheckTimer);
-    if (browserContext) await parkAndCloseDeepSeek();
-    if (geminiContext) await parkAndCloseGemini();
+    await parkOtherProviders('chatgpt');
+    setProviderState('chatgpt', 'connecting');
     broadcast({ event: 'agent_status', text: 'Showing ChatGPT browser window...' });
     if (!chatgptContext) {
       chatgptContext = await launchStealthContext(CHATGPT_PROFILE_DIR, { headless: false });
@@ -1455,22 +1828,19 @@ async function openChatGptBrowser() {
       if (!/chatgpt\.com\/c\//.test(activeChatGptPage.url())) {
         await new ChatGptDriver(activeChatGptPage).clearComposer().catch(() => {});
       }
-      chatgptStatus = 'connected'; activeProvider = 'chatgpt';
-      broadcastProviders();
+      setProviderState('chatgpt', 'connected');
       flushStaging('chatgpt').catch(() => {});
       switchChatGptToBackground();
       return;
     }
-    chatgptStatus = 'connecting'; activeProvider = 'chatgpt';
-    broadcastProviders();
+    setProviderState('chatgpt', 'connecting');
     if (diag.status === 'not_logged_in') {
       try { await activeChatGptPage.goto(CHATGPT_LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: 20000 }); } catch {}
     }
     broadcast({ event: 'login_browser_opened', provider: 'chatgpt', message: diag.message });
     logTerminal('ChatGPT window shown; waiting for login...', 'sys');
     startChatGptLoginWatchdog();
-  })();
-  try { return await chatgptOpenInProgress; } finally { chatgptOpenInProgress = null; }
+  });
 }
 
 async function consolidateProviderTabs(context, urlMarker) {
@@ -1617,15 +1987,13 @@ async function unstageOne(provider, id) {
 })();
 // ►►► END STAGING
 
-let geminiOpenInProgress = null;
-async function openGeminiBrowser() {
-  if (geminiOpenInProgress) return geminiOpenInProgress; 
-  geminiOpenInProgress = openGeminiBrowserInner();
-  try { return await geminiOpenInProgress; } finally { geminiOpenInProgress = null; }
+function openGeminiBrowser() {
+  return runExclusiveProviderOp(openGeminiBrowserInner);
 }
 async function openGeminiBrowserInner() {
   if (geminiLoginCheckTimer) clearInterval(geminiLoginCheckTimer);
-  if (browserContext) await parkAndCloseDeepSeek();
+  await parkOtherProviders('gemini');
+  setProviderState('gemini', 'connecting');
   broadcast({ event: 'agent_status', text: 'Showing Gemini browser window...' });
   if (!geminiContext) {
     geminiContext = await launchStealthContext(GEMINI_PROFILE_DIR, { headless: false });
@@ -1650,23 +2018,23 @@ async function openGeminiBrowserInner() {
   toggleBrowserVisibility(5, path.basename(GEMINI_PROFILE_DIR));
   const diag = await diagnoseGeminiSession(activeGeminiPage);
   if (diag.ok) {
-    geminiStatus = 'connected'; activeProvider = 'gemini';
-    broadcastProviders();
+    setProviderState('gemini', 'connected');
     switchGeminiToBackground();
     new GeminiDriver(activeGeminiPage).ensureModel().catch(() => {});
     return;
   }
-  geminiStatus = 'connecting'; activeProvider = 'gemini';
-  broadcastProviders();
+  setProviderState('gemini', 'connecting');
   broadcast({ event: 'login_browser_opened', provider: 'gemini', message: diag.message });
   logTerminal('Gemini window shown; waiting for Google login...', 'sys');
   geminiLoginCheckTimer = setInterval(async () => {
-    if (!activeGeminiPage || activeGeminiPage.isClosed()) { clearInterval(geminiLoginCheckTimer); geminiLoginCheckTimer = null; return; }
+    if (!activeGeminiPage || activeGeminiPage.isClosed() || (activeProvider && activeProvider !== 'gemini')) {
+      clearInterval(geminiLoginCheckTimer); geminiLoginCheckTimer = null; return;
+    }
     const d = await diagnoseGeminiSession(activeGeminiPage);
     if (d.ok) {
       clearInterval(geminiLoginCheckTimer); geminiLoginCheckTimer = null;
-      geminiStatus = 'connected'; activeProvider = 'gemini';
-      broadcastProviders();
+      await parkOtherProviders('gemini');
+      setProviderState('gemini', 'connected');
       broadcast({ event: 'gemini_logged_in', message: d.message });
       switchGeminiToBackground();
     }
@@ -1754,6 +2122,10 @@ wss.on('connection', (ws) => {
 
     if (data.action === 'set_language') {
       currentLang = data.lang === 'fa' ? 'fa' : 'en';
+      if (runningAgent) {
+        runningAgent.lang = currentLang;
+        if (runningAgent.driver) runningAgent.driver.lang = currentLang;
+      }
     }
 
     if (data.action === 'set_thinking_level') {
@@ -1779,6 +2151,16 @@ wss.on('connection', (ws) => {
       const diag = activeProvider === 'gemini' ? await diagnoseGeminiSession(activeGeminiPage)
         : activeProvider === 'chatgpt' ? await diagnoseChatGptSession(activeChatGptPage)
         : await diagnoseSession(activePage);
+      if ((activeProvider === 'deepseek' || (!activeProvider && activePage)) && diag.status === 'not_logged_in') {
+        await handleDeepSeekSessionExpired('diagnose');
+      }
+      if ((activeProvider === 'deepseek' || (!activeProvider && activePage)) && (diag.status === 'captcha' || diag.status === 'cloudflare')) {
+        toggleBrowserVisibility(5);
+        if (activePage && !activePage.isClosed()) activePage.bringToFront().catch(() => {});
+        broadcast({ event: 'captcha_required', active: true, message: tS('captchaWait') });
+        broadcast({ event: 'agent_status', text: tS('captchaWait') });
+        startLoginWatchdog();
+      }
       broadcast({ event: 'diagnostic_result', ...diag });
     }
 
@@ -1787,8 +2169,7 @@ wss.on('connection', (ws) => {
     }
 
     if (data.action === 'logout') {
-      
-      if (runningAgent) {
+      if (runningAgent && (activeProvider === 'deepseek' || !activeProvider)) {
         runningAgent.stop();
         runningAgent = null;
       }
@@ -1798,17 +2179,28 @@ wss.on('connection', (ws) => {
         clearInterval(loginCheckTimer);
         loginCheckTimer = null;
       }
-      if (browserContext) {
-        try { await browserContext.close(); } catch {}
-        browserContext = null;
-        activePage = null;
+      const wasConnected = deepseekStatus === 'connected';
+      isManualDeepSeekLogout = true;
+      try {
+        if (browserContext) {
+          if (activePage) activePage.__ignoreCloseCleanup = true;
+          try { await browserContext.close(); } catch {}
+          browserContext = null;
+          activePage = null;
+        }
+      } finally {
+        isManualDeepSeekLogout = false;
       }
+      if (lastDeepSeekDiagStatus === 'suspended') {
+        await wipeDeepSeekProfile('account_suspended');
+      }
+      deepSeekProfileFreshForLogin = false;
       deepseekStatus = 'disconnected';
       if (activeProvider === 'deepseek') activeProvider = null;
       broadcastProviders();
       broadcast({ event: 'logged_out' });
-      broadcast({ event: 'agent_status', text: 'Disconnected. Saved profile kept for auto-reconnect.' });
-      logTerminal('Disconnected from DeepSeek (profile preserved).', 'sys');
+      broadcast({ event: 'agent_status', text: wasConnected ? 'Disconnected. Saved profile kept for auto-reconnect.' : 'Disconnected. Unauthenticated profile cleared.' });
+      logTerminal('Disconnected from DeepSeek.', 'sys');
     }
 
     if (data.action === 'set_workspace') {
@@ -1836,6 +2228,22 @@ wss.on('connection', (ws) => {
 
     if (data.action === 'send_prompt') {
       const provider = data.provider === 'gemini' ? 'gemini' : data.provider === 'chatgpt' ? 'chatgpt' : 'deepseek';
+      const MODEL_CHAR_LIMITS = {
+        gemini: 250000,
+        chatgpt: 65000,
+        deepseek: 65000
+      };
+      const maxPromptChars = MODEL_CHAR_LIMITS[provider] || 65000;
+      if (typeof data.prompt === 'string' && data.prompt.length > maxPromptChars) {
+        const provName = provider === 'gemini' ? 'Gemini' : provider === 'chatgpt' ? 'ChatGPT' : 'DeepSeek';
+        broadcast({
+          event: 'error',
+          message: currentLang === 'fa'
+            ? `طول پیام (${data.prompt.length}) از سقف مجاز ${provName} (${maxPromptChars} کاراکتر) بیشتر است.`
+            : `Message length (${data.prompt.length}) exceeds the ${maxPromptChars}-character limit for ${provName}.`
+        });
+        return;
+      }
       let taskSessionId = currentSessionId;
 
       // If pre-upload is still in flight, wait so we don't upload twice
@@ -1928,10 +2336,41 @@ wss.on('connection', (ws) => {
               return;
             }
             if (diag.status === 'cloudflare' || diag.status === 'captcha') {
+              preSendCaptchaAborted = false;
               toggleBrowserVisibility(5);
-              broadcast({ event: 'error', message: diag.message });
-              broadcast({ event: 'task_stopped', message: diag.message });
-              return;
+              if (activePage && !activePage.isClosed()) activePage.bringToFront().catch(() => {});
+              broadcast({ event: 'captcha_required', active: true, message: tS('captchaWait') });
+              broadcast({ event: 'agent_status', text: tS('captchaWait') });
+              logTerminal('Security verification detected — DeepSeek window opened for user.', 'err');
+
+              const deadline = Date.now() + 180000;
+              let solved = false;
+              while (Date.now() < deadline && !preSendCaptchaAborted) {
+                await new Promise(r => setTimeout(r, 800));
+                if (preSendCaptchaAborted || !activePage || activePage.isClosed()) break;
+                diag = await diagnoseSession(activePage);
+                if (diag.ok) { solved = true; break; }
+                if (diag.status === 'suspended' || diag.status === 'not_logged_in') break;
+              }
+
+              broadcast({ event: 'captcha_required', active: false });
+              if (preSendCaptchaAborted) {
+                toggleBrowserVisibility(0);
+                broadcast({ event: 'task_stopped', message: tS('taskStopped') });
+                return;
+              }
+              if (!solved) {
+                if (diag.status === 'not_logged_in') {
+                  await handleDeepSeekSessionExpired('send_prompt');
+                  broadcast({ event: 'error', message: tS('sessionExpiredTask') });
+                } else {
+                  broadcast({ event: 'error', message: diag.message });
+                }
+                broadcast({ event: 'task_stopped', message: diag.message });
+                return;
+              }
+              toggleBrowserVisibility(0);
+              broadcast({ event: 'agent_status', text: tS('captchaResolved') });
             }
             
             await handleDeepSeekSessionExpired('send_prompt');
@@ -2072,12 +2511,8 @@ wss.on('connection', (ws) => {
 
       (async () => {
         try {
-          if (provider === 'deepseek') { if (geminiContext) await parkAndCloseGemini(); if (chatgptContext) await parkAndCloseChatGpt(); }
-          if (provider === 'gemini') { if (browserContext) await parkAndCloseDeepSeek(); if (chatgptContext) await parkAndCloseChatGpt(); }
-          if (provider === 'chatgpt') { if (browserContext) await parkAndCloseDeepSeek(); if (geminiContext) await parkAndCloseGemini(); }
-          if (provider === 'gemini') { geminiStatus = 'connected'; activeProvider = 'gemini'; broadcastProviders(); }
-          if (provider === 'chatgpt') { chatgptStatus = 'connected'; activeProvider = 'chatgpt'; broadcastProviders(); }
-          if (provider === 'deepseek') { deepseekStatus = 'connected'; activeProvider = 'deepseek'; broadcastProviders(); }
+          await parkOtherProviders(provider);
+          setProviderState(provider, 'connected');
 
           let selectedDriver;
           if (provider === 'gemini') {
@@ -2190,6 +2625,21 @@ await sessionStore.appendMessage(currentSessionId, {
             }
              if (event === 'network_retry') {
                logTerminal(`Network error — retry ${payload.attempt}/${payload.max}`, 'err');
+             }
+             if (event === 'captcha_state') {
+               if (payload && payload.active) {
+                 toggleBrowserVisibility(5);
+                 if (activePage && !activePage.isClosed()) activePage.bringToFront().catch(() => {});
+                 logTerminal('Security CAPTCHA detected — brought DeepSeek window to front.', 'err');
+                 broadcast({ event: 'captcha_required', active: true, message: tS('captchaWait') });
+                 broadcast({ event: 'agent_status', text: tS('captchaWait') });
+               } else {
+                 toggleBrowserVisibility(0);
+                 logTerminal('Security CAPTCHA resolved — returned DeepSeek to background.', 'sys');
+                 broadcast({ event: 'captcha_required', active: false });
+                 broadcast({ event: 'agent_status', text: tS('captchaResolved') });
+               }
+               return;
              }
              if (event === 'agent_message' && payload.action === 'patch_file' && payload.result) {
               broadcast({ event: 'patch_applied', details: payload.result.details || [], successful: payload.result.successful, total: payload.result.total });
@@ -2356,12 +2806,17 @@ await sessionStore.appendMessage(currentSessionId, {
     }
 
     if (data.action === 'stop_task') {
+      preSendCaptchaAborted = true;
       if (runningAgent) {
         runningAgent.stop();
         runningAgent = null;
       }
       pendingPatch = null;
       pendingCommand = null;
+      if (activeProvider === 'deepseek') {
+        toggleBrowserVisibility(0);
+        broadcast({ event: 'captcha_required', active: false });
+      }
       broadcast({ event: 'task_stopped', message: 'Task stopped by user.' });
     }
 
@@ -2470,12 +2925,22 @@ await sessionStore.appendMessage(currentSessionId, {
             }
 
             if (sessionProvider === 'deepseek' && activePage && !activePage.isClosed()) {
+              const authBefore = await detectDeepSeekAuthState(activePage);
+              if (authBefore.status === 'login_page') {
+                await handleDeepSeekSessionExpired('load_session');
+                return;
+              }
               const driver = new DeepSeekDriver(activePage);
               broadcast({ event: 'agent_status', text: tS('syncing') });
               let exists = sessUrl ? await driver.checkChatExists(sessUrl) : true;
               if (sessUrl && !exists) {
                 await new Promise(r => setTimeout(r, 1500));
                 exists = await driver.checkChatExists(sessUrl);
+              }
+              const authAfter = await detectDeepSeekAuthState(activePage);
+              if (authAfter.status === 'login_page') {
+                await handleDeepSeekSessionExpired('load_session_nav');
+                return;
               }
               if (!exists) {
                 await sessionStore.deleteSession(data.sessionId);
@@ -2528,6 +2993,12 @@ await sessionStore.appendMessage(currentSessionId, {
         return;
       }
 
+      const authBefore = await detectDeepSeekAuthState(activePage);
+      if (authBefore.status === 'login_page') {
+        await handleDeepSeekSessionExpired('sync_with_deepseek');
+        ws.send(JSON.stringify({ event: 'error', message: tS('sessionExpired') }));
+        return;
+      }
       broadcast({ event: 'agent_status', text: 'Synchronizing with DeepSeek sidebar...' });
       const driver = new DeepSeekDriver(activePage);
       const localSessions = await sessionStore.getSessions();
@@ -2815,7 +3286,7 @@ await sessionStore.appendMessage(currentSessionId, {
       ws.send(JSON.stringify({ event: 'sessions_list', sessions: earlySessions, currentSessionId }));
     } catch {}
     ws.send(JSON.stringify({ event: 'terminal_history', logs: terminalLogs }));
-    ws.send(JSON.stringify({ event: 'providers_status', deepseek: deepseekStatus, gemini: geminiStatus, active: activeProvider }));
+    ws.send(JSON.stringify({ event: 'providers_status', deepseek: deepseekStatus, gemini: geminiStatus, chatgpt: chatgptStatus, active: activeProvider }));
     ws.send(JSON.stringify({ event: 'thinking_level', level: geminiThinkingLevel }));
     ws.send(JSON.stringify({ event: 'chatgpt_think_status', enabled: chatgptThinkEnabled }));
     if (currentTools) {
@@ -2835,9 +3306,12 @@ await sessionStore.appendMessage(currentSessionId, {
           ws.send(JSON.stringify({ event: 'deep_think_status', enabled: dtState }));
         }
       } else if (diag.status === 'not_logged_in') {
-        
-        deepseekStatus = 'connecting'; broadcastProviders();
-        startLoginWatchdog();
+        if (!deepSeekProfileFreshForLogin) {
+          handleDeepSeekSessionExpired('ws_connect').catch(() => {});
+        } else {
+          deepseekStatus = 'connecting'; broadcastProviders();
+          startLoginWatchdog();
+        }
       }
     } else {
       ws.send(JSON.stringify({ event: 'auth_status', isLoggedIn: false }));
@@ -2854,6 +3328,11 @@ let autoRestoreStarted = false;
 async function autoRestoreDefaultProvider(provider) {
   if (autoRestoreStarted) return;
   autoRestoreStarted = true;
+  return runExclusiveProviderOp(() => _autoRestoreDefaultProviderImpl(provider));
+}
+
+async function _autoRestoreDefaultProviderImpl(provider) {
+  if (activeProvider || browserContext || geminiContext || chatgptContext) return;
   const prov = provider === 'chatgpt' ? 'chatgpt' : provider === 'gemini' ? 'gemini' : 'deepseek';
   defaultProvider = prov;
   providerSwitchInProgress = true;
@@ -2979,6 +3458,8 @@ async function autoRestoreDefaultProvider(provider) {
     let profileExists = false;
     try { await fs.access(PROFILE_DIR); profileExists = true; } catch {}
     if (!profileExists) return;
+    deepSeekProfileFreshForLogin = false;
+    isLaunchingDeepSeek = true;
     try {
       logTerminal('Restoring previous DeepSeek session...', 'sys');
       browserContext = await launchStealthContext(PROFILE_DIR, { headless: false });
@@ -2988,10 +3469,22 @@ async function autoRestoreDefaultProvider(provider) {
       if (!activePage.url().includes('chat.deepseek.com')) {
         await activePage.goto('https://chat.deepseek.com/', { waitUntil: 'domcontentloaded' });
       }
-      await activePage.waitForTimeout(2500);
+      await waitForDeepSeekAuthSettle(activePage, 5000);
       toggleBrowserVisibility(0);
+    } catch (err) {
+      console.error('DeepSeek auto-restore error:', err.message);
+      try { if (browserContext) await browserContext.close(); } catch {}
+      browserContext = null; activePage = null;
+      deepseekStatus = 'disconnected'; broadcastProviders();
+      return;
+    } finally {
+      isLaunchingDeepSeek = false;
+    }
+
+    try {
       const diag = await diagnoseSession(activePage);
       if (diag.ok) {
+        deepSeekProfileFreshForLogin = false;
         broadcast({ event: 'logged_in', email: 'DeepSeek Active (Invisible)' });
         broadcast({ event: 'agent_status', text: 'Ready! Invisible engine active.' });
         const driver = new DeepSeekDriver(activePage);
@@ -3001,13 +3494,20 @@ async function autoRestoreDefaultProvider(provider) {
         }
         deepseekStatus = 'connected'; activeProvider = 'deepseek'; broadcastProviders();
         logTerminal('Auto-connected to saved DeepSeek profile.', 'sys');
-      } else {
+      } else if (diag.status === 'not_logged_in') {
         await handleDeepSeekSessionExpired('auto-restore');
+      } else if (diag.status === 'suspended') {
+        deepseekStatus = 'disconnected'; broadcastProviders();
+        broadcast({ event: 'error', message: diag.message });
+      } else {
+        deepseekStatus = 'connecting'; activeProvider = 'deepseek'; broadcastProviders();
+        toggleBrowserVisibility(5);
+        broadcast({ event: 'login_browser_opened', provider: 'deepseek', message: diag.message });
+        broadcast({ event: 'agent_status', text: diag.message });
+        startLoginWatchdog();
       }
     } catch (err) {
-      console.error('DeepSeek auto-restore error:', err.message);
-      try { if (browserContext) await browserContext.close(); } catch {}
-      browserContext = null; activePage = null;
+      console.error('DeepSeek auto-restore diag error:', err.message);
       deepseekStatus = 'disconnected'; broadcastProviders();
     }
   } finally {

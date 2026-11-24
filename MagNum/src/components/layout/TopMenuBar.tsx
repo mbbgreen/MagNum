@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { GitBranch, Heart } from 'lucide-react';
 import { alertDialog } from '../modals/AppDialog';
+import { Language, translations } from '../../i18n/translations';
 
 interface TopMenuBarProps {
   activeWorkspace: string;
@@ -11,6 +12,7 @@ interface TopMenuBarProps {
   onToggleTab: (tab: 'changes' | 'browser' | 'terminal' | 'files') => void;
   onOpenFilters: () => void;
   onDiagnose: () => void;
+  lang?: Language;
 }
 
 export const TopMenuBar: React.FC<TopMenuBarProps> = ({
@@ -20,9 +22,13 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
   onOpenFolder,
   onToggleTab,
   onOpenFilters,
-  onDiagnose
+  onDiagnose,
+  lang = 'en'
 }) => {
   const [openMenu, setOpenMenu] = useState<'file' | 'edit' | 'view' | 'help' | null>(null);
+  const t = translations[lang];
+  const isFa = lang === 'fa';
+  const menuDir = isFa ? 'rtl' : 'ltr';
 
   useEffect(() => {
     const handleOutsideClick = () => setOpenMenu(null);
@@ -54,39 +60,36 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
           style={{ marginRight: 6, borderRadius: 5, objectFit: 'contain' }}
           onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
         />
+
         <div style={{ position: 'relative' }}>
           <button
             onClick={(e) => { e.stopPropagation(); setOpenMenu(openMenu === 'file' ? null : 'file'); }}
             style={{
               background: openMenu === 'file' ? 'var(--bg-surface-hover)' : 'transparent',
-              border: 'none',
-              color: 'var(--text-main)',
-              fontSize: '12px',
-              padding: '4px 8px',
-              borderRadius: '4px',
-              cursor: 'pointer'
+              border: 'none', color: 'var(--text-main)', fontSize: '12px',
+              padding: '4px 8px', borderRadius: '4px', cursor: 'pointer'
             }}
           >
-            File
+            {t.menuFile}
           </button>
           {openMenu === 'file' && (
-            <div className="dropdown-menu">
+            <div className="dropdown-menu" dir={menuDir}>
               <div className="dropdown-item" onClick={onNewChat}>
-                <span>New Agent</span> <span className="shortcut-text">Ctrl+N</span>
+                <span>{t.newAgent}</span> <span className="shortcut-text" dir="ltr">Ctrl+N</span>
               </div>
               <div className="dropdown-item" onClick={onOpenFolder}>
-                <span>Open Folder</span> <span className="shortcut-text">Ctrl+O</span>
+                <span>{t.openFolder}</span> <span className="shortcut-text" dir="ltr">Ctrl+O</span>
               </div>
               <div className="dropdown-divider" />
               <div className="dropdown-item" onClick={() => onToggleTab('terminal')}>
-                <span>New Terminal</span> <span className="shortcut-text">Ctrl+Shift+'</span>
+                <span>{t.newTerminal}</span> <span className="shortcut-text" dir="ltr">Ctrl+Shift+'</span>
               </div>
               <div className="dropdown-item" onClick={() => onToggleTab('browser')}>
-                <span>New Browser</span>
+                <span>{t.newBrowser}</span>
               </div>
               <div className="dropdown-divider" />
               <div className="dropdown-item" onClick={() => window.close()}>
-                <span>Exit</span>
+                <span>{t.exitApp}</span>
               </div>
             </div>
           )}
@@ -97,33 +100,29 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
             onClick={(e) => { e.stopPropagation(); setOpenMenu(openMenu === 'edit' ? null : 'edit'); }}
             style={{
               background: openMenu === 'edit' ? 'var(--bg-surface-hover)' : 'transparent',
-              border: 'none',
-              color: 'var(--text-main)',
-              fontSize: '12px',
-              padding: '4px 8px',
-              borderRadius: '4px',
-              cursor: 'pointer'
+              border: 'none', color: 'var(--text-main)', fontSize: '12px',
+              padding: '4px 8px', borderRadius: '4px', cursor: 'pointer'
             }}
           >
-            Edit
+            {t.menuEdit}
           </button>
           {openMenu === 'edit' && (
-            <div className="dropdown-menu">
+            <div className="dropdown-menu" dir={menuDir}>
               <div className="dropdown-item" onClick={() => document.execCommand('undo')}>
-                <span>Undo</span> <span className="shortcut-text">Ctrl+Z</span>
+                <span>{t.undo}</span> <span className="shortcut-text" dir="ltr">Ctrl+Z</span>
               </div>
               <div className="dropdown-item" onClick={() => document.execCommand('redo')}>
-                <span>Redo</span> <span className="shortcut-text">Ctrl+Y</span>
+                <span>{t.redo}</span> <span className="shortcut-text" dir="ltr">Ctrl+Y</span>
               </div>
               <div className="dropdown-divider" />
               <div className="dropdown-item" onClick={() => document.execCommand('cut')}>
-                <span>Cut</span> <span className="shortcut-text">Ctrl+X</span>
+                <span>{t.cut}</span> <span className="shortcut-text" dir="ltr">Ctrl+X</span>
               </div>
               <div className="dropdown-item" onClick={() => document.execCommand('copy')}>
-                <span>Copy</span> <span className="shortcut-text">Ctrl+C</span>
+                <span>{t.copy}</span> <span className="shortcut-text" dir="ltr">Ctrl+C</span>
               </div>
               <div className="dropdown-item" onClick={() => document.execCommand('paste')}>
-                <span>Paste</span> <span className="shortcut-text">Ctrl+V</span>
+                <span>{t.paste}</span> <span className="shortcut-text" dir="ltr">Ctrl+V</span>
               </div>
             </div>
           )}
@@ -134,37 +133,33 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
             onClick={(e) => { e.stopPropagation(); setOpenMenu(openMenu === 'view' ? null : 'view'); }}
             style={{
               background: openMenu === 'view' ? 'var(--bg-surface-hover)' : 'transparent',
-              border: 'none',
-              color: 'var(--text-main)',
-              fontSize: '12px',
-              padding: '4px 8px',
-              borderRadius: '4px',
-              cursor: 'pointer'
+              border: 'none', color: 'var(--text-main)', fontSize: '12px',
+              padding: '4px 8px', borderRadius: '4px', cursor: 'pointer'
             }}
           >
-            View
+            {t.menuView}
           </button>
           {openMenu === 'view' && (
-            <div className="dropdown-menu">
+            <div className="dropdown-menu" dir={menuDir}>
               <div className="dropdown-item" onClick={onToggleSidebar}>
-                <span>Toggle Primary Sidebar</span> <span className="shortcut-text">Ctrl+B</span>
+                <span>{t.toggleSidebarMenu}</span> <span className="shortcut-text" dir="ltr">Ctrl+B</span>
               </div>
               <div className="dropdown-divider" />
               <div className="dropdown-item" onClick={() => onToggleTab('changes')}>
-                <span>Changes</span> <span className="shortcut-text">Ctrl+E</span>
+                <span>{t.tabChanges}</span> <span className="shortcut-text" dir="ltr">Ctrl+E</span>
               </div>
               <div className="dropdown-item" onClick={() => onToggleTab('browser')}>
-                <span>Browser</span> <span className="shortcut-text">Ctrl+Shift+B</span>
+                <span>{t.tabBrowser}</span> <span className="shortcut-text" dir="ltr">Ctrl+Shift+B</span>
               </div>
               <div className="dropdown-item" onClick={() => onToggleTab('files')}>
-                <span>Files</span> <span className="shortcut-text">Ctrl+G</span>
+                <span>{t.tabFiles}</span> <span className="shortcut-text" dir="ltr">Ctrl+G</span>
               </div>
               <div className="dropdown-item" onClick={() => onToggleTab('terminal')}>
-                <span>Terminal</span> <span className="shortcut-text">Ctrl+J</span>
+                <span>{t.tabTerminal}</span> <span className="shortcut-text" dir="ltr">Ctrl+J</span>
               </div>
               <div className="dropdown-divider" />
               <div className="dropdown-item" onClick={onOpenFilters}>
-                <span>Filter Settings</span> <span className="shortcut-text">Ctrl+,</span>
+                <span>{t.filterSettings}</span> <span className="shortcut-text" dir="ltr">Ctrl+,</span>
               </div>
             </div>
           )}
@@ -175,91 +170,87 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
             onClick={(e) => { e.stopPropagation(); setOpenMenu(openMenu === 'help' ? null : 'help'); }}
             style={{
               background: openMenu === 'help' ? 'var(--bg-surface-hover)' : 'transparent',
-              border: 'none',
-              color: 'var(--text-main)',
-              fontSize: '12px',
-              padding: '4px 8px',
-              borderRadius: '4px',
-              cursor: 'pointer'
+              border: 'none', color: 'var(--text-main)', fontSize: '12px',
+              padding: '4px 8px', borderRadius: '4px', cursor: 'pointer'
             }}
           >
-            Help
+            {t.menuHelp}
           </button>
           {openMenu === 'help' && (
-            <div className="dropdown-menu">
+            <div className="dropdown-menu" dir={menuDir}>
               <div className="dropdown-item" onClick={onDiagnose}>
-                <span>Diagnose Engine</span> <span className="shortcut-text">Ctrl+K</span>
+                <span>{t.checkConnection}</span> <span className="shortcut-text" dir="ltr">Ctrl+K</span>
               </div>
-              <div className="dropdown-item" onClick={() => alertDialog({ title: 'License', message: 'MagNum Agent v1.0.0 — All rights reserved.' })}>
-                <span>View License</span>
+              <div className="dropdown-item" onClick={() => alertDialog({ title: t.viewLicense, message: t.licenseMessage })}>
+                <span>{t.viewLicense}</span>
               </div>
             </div>
           )}
         </div>
-
       </div>
 
-<div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-  <button
-    type="button"
-    onClick={(e) => {
-      e.stopPropagation();
-      const url = 'https://nethersgames.com/donate';
-      try {
-        const w = window.open(url, '_blank', 'noopener,noreferrer');
-        if (!w) {
-          const a = document.createElement('a');
-          a.href = url;
-          a.target = '_blank';
-          a.rel = 'noopener noreferrer';
-          document.body.appendChild(a);
-          a.click();
-          a.remove();
-        }
-      } catch {
-        window.location.href = url;
-      }
-    }}
-    title="حمایت از Nethers Games"
-    style={{
-      display: 'flex',
-      alignItems: 'center',
-      gap: 5,
-      padding: '3px 10px',
-      fontSize: 11,
-      fontWeight: 600,
-      color: '#4ade80',
-      background: 'linear-gradient(180deg, rgba(34,197,94,0.18), rgba(34,197,94,0.08))',
-      border: '1px solid rgba(34,197,94,0.45)',
-      borderRadius: 6,
-      cursor: 'pointer',
-      backdropFilter: 'blur(8px)',
-      WebkitBackdropFilter: 'blur(8px)',
-      boxShadow: '0 0 12px rgba(34,197,94,0.18), inset 0 1px 0 rgba(255,255,255,0.08)',
-      transition: 'all 0.18s ease',
-      lineHeight: 1
-    }}
-    onMouseEnter={(e) => {
-      e.currentTarget.style.background = 'linear-gradient(180deg, rgba(34,197,94,0.28), rgba(34,197,94,0.14))';
-      e.currentTarget.style.boxShadow = '0 0 18px rgba(34,197,94,0.35), inset 0 1px 0 rgba(255,255,255,0.12)';
-    }}
-    onMouseLeave={(e) => {
-      e.currentTarget.style.background = 'linear-gradient(180deg, rgba(34,197,94,0.18), rgba(34,197,94,0.08))';
-      e.currentTarget.style.boxShadow = '0 0 12px rgba(34,197,94,0.18), inset 0 1px 0 rgba(255,255,255,0.08)';
-    }}
-  >
-    <Heart size={11} fill="#4ade80" color="#4ade80" />
-    <span>Donate</span>
-  </button>
-  {repoName && (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--text-muted)' }}>
-      <GitBranch size={12} color="var(--accent-green)" />
-      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 120 }}>
-        {repoName}
-      </span>
-    </div>
-  )}
-</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            const url = 'https://nethersgames.com/donate';
+            try {
+              const w = window.open(url, '_blank', 'noopener,noreferrer');
+              if (!w) {
+                const a = document.createElement('a');
+                a.href = url;
+                a.target = '_blank';
+                a.rel = 'noopener noreferrer';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+              }
+            } catch {
+              window.location.href = url;
+            }
+          }}
+          title={t.donateTitle}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 5,
+            padding: '3px 10px',
+            fontSize: 11,
+            fontWeight: 600,
+            color: '#4ade80',
+            background: 'linear-gradient(180deg, rgba(34,197,94,0.18), rgba(34,197,94,0.08))',
+            border: '1px solid rgba(34,197,94,0.45)',
+            borderRadius: 6,
+            cursor: 'pointer',
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
+            boxShadow: '0 0 12px rgba(34,197,94,0.18), inset 0 1px 0 rgba(255,255,255,0.08)',
+            transition: 'all 0.18s ease',
+            lineHeight: 1
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'linear-gradient(180deg, rgba(34,197,94,0.28), rgba(34,197,94,0.14))';
+            e.currentTarget.style.boxShadow = '0 0 18px rgba(34,197,94,0.35), inset 0 1px 0 rgba(255,255,255,0.12)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'linear-gradient(180deg, rgba(34,197,94,0.18), rgba(34,197,94,0.08))';
+            e.currentTarget.style.boxShadow = '0 0 12px rgba(34,197,94,0.18), inset 0 1px 0 rgba(255,255,255,0.08)';
+          }}
+        >
+          <Heart size={11} fill="#4ade80" color="#4ade80" />
+          <span>{t.donate}</span>
+        </button>
+
+        {repoName && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--text-muted)' }}>
+            <GitBranch size={12} color="var(--accent-green)" />
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 120 }}>
+              {repoName}
+            </span>
+          </div>
+        )}
+      </div>
     </nav>
   );
 };

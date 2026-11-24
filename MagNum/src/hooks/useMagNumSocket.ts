@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { ChatMessage, FileNode, SessionMeta, RightPanelTab, Attachment, EditSummary, EditDetail } from '../types';
+import { Language } from '../i18n/translations';
 import { embeddedBrowser } from '../utils/embeddedBrowser';
 import {
   bindAttachmentSender, stageAttachments as stageAtts,
   unstageAttachment as unstageAtt, onLiveAttachmentsChange
 } from '../utils/attachmentStaging';
+import { getModelCharLimit, getProviderDisplayName } from '../utils/providerLimits';
 
 const PROVIDER_IDS = ['deepseek', 'gemini', 'chatgpt'] as const;
 type ProviderId = typeof PROVIDER_IDS[number];
@@ -55,7 +57,9 @@ async function getWsToken(port: number): Promise<string> {
   throw new Error('Could not obtain WebSocket token');
 }
 
-export function useMagNumSocket(onOpenRightTab: (tab: RightPanelTab) => void) {
+export function useMagNumSocket(onOpenRightTab: (tab: RightPanelTab) => void, lang: Language = 'en') {
+  const langRef = useRef<Language>(lang);
+  useEffect(() => { langRef.current = lang; }, [lang]);
   const [ws, setWs] = useState<WebSocket | null>(null);
   const sendActionRef = useRef<(action: string, payload?: Record<string, any>) => void>(() => {});
   useEffect(() => {
@@ -75,6 +79,7 @@ const lastErrorRef = useRef<{ text: string; ts: number }>({ text: '', ts: 0 });
   const [isRunning, setIsRunning] = useState(false);
   const [agentStatus, setAgentStatus] = useState<string>('');
 const [networkRetry, setNetworkRetry] = useState<{ attempt: number; max: number } | null>(null);
+  const [captchaRequired, setCaptchaRequired] = useState<string | null>(null);
   const [isDeepThink, setIsDeepThink] = useState(readDeepThinkDefault);
   const [selectedProvider, setSelectedProvider] = useState<ProviderId>(readDefaultProvider);
   const [defaultProvider, setDefaultProviderState] = useState<ProviderId>(readDefaultProvider);
@@ -174,7 +179,7 @@ const currentSessionIdRef = useRef<string | null>(currentSessionId);
         socket?.send(JSON.stringify({ action: 'get_recent_workspaces' }));
       };
       socket.onmessage = (event) => {
-        if (typeof event.data === 'string' && event.data.length > 2_000_000) {
+        if (typeof event.data === 'string' && event.data.length > 16_000_000) {
           console.warn('[ws] dropped oversized payload:', event.data.length);
           return;
         }
@@ -184,7 +189,9 @@ const currentSessionIdRef = useRef<string | null>(currentSessionId);
           case 'logged_in':
             setAccountInfo({ isLoggedIn: data.isLoggedIn ?? true, email: data.email || 'DeepSeek Online' });
             setConnectionStatus(data.isLoggedIn ?? true ? 'connected' : 'disconnected');
-            setProvidersStatus(p => ({ ...p, deepseek: (data.isLoggedIn ?? true) ? 'connected' : 'disconnected' }));
+            setProvidersStatus(p => (data.isLoggedIn ?? true)
+              ? { deepseek: 'connected', gemini: 'disconnected', chatgpt: 'disconnected' }
+              : { ...p, deepseek: 'disconnected' });
             setAgentStatus('');
             break;
           case 'logged_out':
@@ -204,6 +211,7 @@ const currentSessionIdRef = useRef<string | null>(currentSessionId);
             setSessions(data.sessions || []);
             setAgentStatus('');
             setNetworkRetry(null);
+            setCaptchaRequired(null);
             setPatchHistory([]);
             setPendingPatches([]);
             setPendingCommand(null);
@@ -226,6 +234,7 @@ const currentSessionIdRef = useRef<string | null>(currentSessionId);
             setTotalMessageCount(data.session?.totalMessageCount || (data.session?.messages || []).length);
             setIsLoadingOlder(false);
             setNetworkRetry(null);
+            setCaptchaRequired(null);
             break;
           case 'workspace_loaded':
             setActiveWorkspace(data.path);
@@ -239,10 +248,29 @@ const currentSessionIdRef = useRef<string | null>(currentSessionId);
           case 'agent_status':
             setAgentStatus(data.text);
             break;
-          case 'network_retry':
+          case 'network_retry': {
+            const isFa = langRef.current === 'fa';
             setNetworkRetry({ attempt: data.attempt, max: data.max });
-            setAgentStatus(typeof data.text === 'string' ? data.text : `Network error — retrying (${data.attempt}/${data.max})...`);
+            setAgentStatus(
+              typeof data.text === 'string'
+                ? data.text
+                : (isFa
+                    ? `اختلال شبکه — تلاش مجدد (‏${data.attempt}/${data.max}‏)...`
+                    : `Network error — retrying (${data.attempt}/${data.max})...`)
+            );
             break;
+          }
+          case 'captcha_required': {
+            if (data.active) {
+              setCaptchaRequired(typeof data.message === 'string' ? data.message : '');
+            } else {
+              setCaptchaRequired(null);
+              import('@tauri-apps/api/window')
+                .then(m => m.getCurrentWindow().setFocus().catch(() => {}))
+                .catch(() => {});
+            }
+            break;
+          }
           case 'agent_streaming':
             streamingTextRef.current = typeof data.text === 'string' ? data.text : '';
             setStreamingState({
@@ -273,6 +301,7 @@ const currentSessionIdRef = useRef<string | null>(currentSessionId);
             }
 
             streamingTextRef.current = '';
+            setNetworkRetry(null);
             setMessages(prev => {
               const stableId = data.msgId ? String(data.msgId) : commitId;
               if (prev.some(m => m.id === stableId)) return prev;
@@ -309,6 +338,7 @@ const currentSessionIdRef = useRef<string | null>(currentSessionId);
             setAgentStatus('');
             setStreamingState(null);
             setNetworkRetry(null);
+            setCaptchaRequired(null);
             break;
           case 'error': {
             const errText = String(data.message || '');
@@ -319,10 +349,12 @@ const currentSessionIdRef = useRef<string | null>(currentSessionId);
             setAgentStatus('');
             setStreamingState(null);
             setNetworkRetry(null);
+            setCaptchaRequired(null);
+            const isFa = langRef.current === 'fa';
             setMessages(prev => [...prev, {
               id: Math.random().toString(36).substring(2, 9),
               role: 'agent',
-              text: `Error: ${data.message}`,
+              text: `${isFa ? 'خطا: ‏' : 'Error: '}${data.message}`,
               isError: true,
               ts: Date.now(),
               timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -406,21 +438,21 @@ const currentSessionIdRef = useRef<string | null>(currentSessionId);
             break;
           case 'login_browser_opened':
             setAgentStatus(data.message || 'Browser window is open.');
-            if (data.provider === 'gemini') setProvidersStatus(p => ({ ...p, gemini: 'connecting' }));
-            else if (data.provider === 'chatgpt') setProvidersStatus(p => ({ ...p, chatgpt: 'connecting' }));
-            else { setProvidersStatus(p => ({ ...p, deepseek: 'connecting' })); setConnectionStatus('connecting'); }
+            if (data.provider === 'gemini') setProvidersStatus({ deepseek: 'disconnected', gemini: 'connecting', chatgpt: 'disconnected' });
+            else if (data.provider === 'chatgpt') setProvidersStatus({ deepseek: 'disconnected', gemini: 'disconnected', chatgpt: 'connecting' });
+            else { setProvidersStatus({ deepseek: 'connecting', gemini: 'disconnected', chatgpt: 'disconnected' }); setConnectionStatus('connecting'); }
             break;
           case 'providers_status':
             setProvidersStatus({ deepseek: data.deepseek || 'disconnected', gemini: data.gemini || 'disconnected', chatgpt: data.chatgpt || 'disconnected' });
             break;
           case 'gemini_logged_in':
-            setProvidersStatus(p => ({ ...p, gemini: 'connected' }));
+            setProvidersStatus({ deepseek: 'disconnected', gemini: 'connected', chatgpt: 'disconnected' });
             break;
           case 'gemini_logged_out':
             setProvidersStatus(p => ({ ...p, gemini: 'disconnected' }));
             break;
           case 'chatgpt_logged_in':
-            setProvidersStatus(p => ({ ...p, chatgpt: 'connected' }));
+            setProvidersStatus({ deepseek: 'disconnected', gemini: 'disconnected', chatgpt: 'connected' });
             break;
           case 'chatgpt_logged_out':
             setProvidersStatus(p => ({ ...p, chatgpt: 'disconnected' }));
@@ -489,7 +521,11 @@ const currentSessionIdRef = useRef<string | null>(currentSessionId);
         if (disposed) return; 
         setConnectionStatus('disconnected');
         setIsRunning(false);
-        setAgentStatus('Engine disconnected — reconnecting...');
+        setAgentStatus(
+          langRef.current === 'fa'
+            ? 'ارتباط با هسته برنامه قطع شد — در حال اتصال مجدد...'
+            : 'Engine disconnected — reconnecting...'
+        );
         retries++;
         const delay = Math.min(500 * retries, 5000);
         setTimeout(initializeAndConnect, delay);
@@ -581,16 +617,34 @@ const currentSessionIdRef = useRef<string | null>(currentSessionId);
     autoApproveCommand: boolean = false
   ) => {
     if ((!promptText.trim() && attachments.length === 0) || isRunning) return;
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
+    const isFa = langRef.current === 'fa';
+    const maxChars = getModelCharLimit(selectedProvider);
+    if (promptText.length > maxChars) {
+      const provName = getProviderDisplayName(selectedProvider);
       setMessages(prev => [...prev, {
         id: Math.random().toString(36).substring(2, 9),
         role: 'agent',
-        text: 'Error: Engine disconnected. Reconnecting to backend... please try again in a moment.',
+        text: isFa
+          ? `خطا: طول پیام (‏${promptText.length}‏) از سقف مجاز ‏${provName}‏ (‏${maxChars}‏ کاراکتر) بیشتر است.`
+          : `Error: Message length (${promptText.length}) exceeds the ${maxChars}-character limit for ${provName}.`,
         isError: true,
         ts: Date.now(),
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       }]);
-      setAgentStatus('Engine disconnected — reconnecting...');
+      return;
+    }
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      setMessages(prev => [...prev, {
+        id: Math.random().toString(36).substring(2, 9),
+        role: 'agent',
+        text: isFa
+          ? 'خطا: ارتباط با هسته برنامه برقرار نیست. در حال اتصال مجدد... لطفاً چند لحظه دیگر دوباره تلاش کنید.'
+          : 'Error: Engine disconnected. Reconnecting... please try again in a moment.',
+        isError: true,
+        ts: Date.now(),
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      }]);
+      setAgentStatus(isFa ? 'ارتباط قطع شد — در حال اتصال مجدد...' : 'Engine disconnected — reconnecting...');
       return;
     }
     const userMsgId = Math.random().toString(36).substring(2, 9);
@@ -604,7 +658,7 @@ const currentSessionIdRef = useRef<string | null>(currentSessionId);
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     }]);
     setIsRunning(true);
-    setAgentStatus('Uploading context & planning next moves...');
+    setAgentStatus(isFa ? 'در حال آماده‌سازی و ارسال درخواست...' : 'Preparing request & planning next steps...');
     sendAction('send_prompt', {
       prompt: promptText,
       provider: selectedProvider,
@@ -658,6 +712,7 @@ const currentSessionIdRef = useRef<string | null>(currentSessionId);
     streamingState,
     isRunning,
     networkRetry,
+    captchaRequired,
     agentStatus,
     isDeepThink,
     setIsDeepThink,

@@ -1,19 +1,24 @@
 import React, { useState } from 'react';
+import { Language, translations } from '../../i18n/translations';
 
 interface FilterModalProps {
   isOpen: boolean;
   ignoredPatterns: string[];
   onClose: () => void;
   onUpdateFilters: (newList: string[]) => void;
+  lang?: Language;
 }
 
 export const FilterModal: React.FC<FilterModalProps> = ({
   isOpen,
   ignoredPatterns,
   onClose,
-  onUpdateFilters
+  onUpdateFilters,
+  lang = 'en'
 }) => {
   const [newInput, setNewInput] = useState('');
+  const t = translations[lang];
+  const isFa = lang === 'fa';
 
   if (!isOpen) return null;
 
@@ -42,31 +47,35 @@ export const FilterModal: React.FC<FilterModalProps> = ({
       alignItems: 'center',
       justifyContent: 'center'
     }}>
-      <div style={{
-        width: '420px',
-        background: 'var(--bg-popover)',
-        border: '1px solid var(--border-subtle)',
-        borderRadius: '12px',
-        padding: '16px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '12px'
-      }}>
+      <div
+        dir={isFa ? 'rtl' : 'ltr'}
+        style={{
+          width: '420px',
+          background: 'var(--bg-popover)',
+          border: '1px solid var(--border-subtle)',
+          borderRadius: '12px',
+          padding: '16px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '12px'
+        }}
+      >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-main)' }}>Customize Ignored Items</span>
+          <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-main)' }}>{t.filterTitle}</span>
           <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: 'var(--text-dim)', cursor: 'pointer' }}>✕</button>
         </div>
 
         <div style={{ display: 'flex', gap: '6px' }}>
           <input
             type="text"
+            dir="auto"
             value={newInput}
             onChange={(e) => setNewInput(e.target.value)}
-            placeholder="Folder or file name (e.g. .git)"
+            placeholder={t.filterPlaceholder}
             style={{ flex: 1, background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', padding: '6px 10px', borderRadius: '6px', color: 'var(--text-main)', fontSize: '12px' }}
           />
           <button onClick={handleAdd} style={{ background: 'var(--accent-green)', border: 'none', color: 'var(--on-accent)', padding: '0 12px', borderRadius: '6px', fontWeight: 600, fontSize: '12px', cursor: 'pointer' }}>
-            Add
+            {t.addBtn}
           </button>
         </div>
 

@@ -56,7 +56,7 @@ const t = {
     retry: 'تلاش مجدد',
     pleaseWait: 'لطفاً چند لحظه صبر کنید...',
     brandTag: 'نصب مگنوم',
-    footerTag: 'نصب کننده مگنوم',
+    footerTag: 'نصب‌کننده مگنوم',
     uninstallTitle: 'حذف مگنوم',
     uninstallSubtitle: 'آیا از حذف کامل نرم‌افزار مگنوم از سیستم خود اطمینان دارید؟',
     uninstallBtn: 'حذف کامل برنامه',
@@ -249,7 +249,7 @@ export default function InstallerApp() {
           <div className="content-box result-state">
             <AlertCircle size={44} color="var(--diff-del-text)" />
             <span className="result-title">{strings.errorTitle}</span>
-            <span className="error-text selectable-text">{errorMsg}</span>
+            <span className="error-text selectable-text" dir="auto">{errorMsg}</span>
             <button className="primary-btn" onClick={() => setStep('ready')}>{strings.retry}</button>
           </div>
         )}

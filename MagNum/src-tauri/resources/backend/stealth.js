@@ -61,29 +61,112 @@ function installStealth(config) {
     } catch (e) {}
   };
 
+  // Mask overridden getters/functions so Function.prototype.toString still reports [native code]
+  const origToString = Function.prototype.toString;
+  const maskedFns = new WeakMap();
+  const maskFn = (fn, nativeStr) => {
+    safe(() => maskedFns.set(fn, nativeStr));
+    return fn;
+  };
   safe(() => {
-    Object.defineProperty(navigator, 'webdriver', { get: () => false, configurable: true });
+    const wrappedToString = function toString() {
+      if (typeof this === 'function' && maskedFns.has(this)) {
+        return maskedFns.get(this);
+      }
+      return origToString.call(this);
+    };
+    maskedFns.set(wrappedToString, 'function toString() { [native code] }');
+    Object.defineProperty(Function.prototype, 'toString', {
+      value: wrappedToString,
+      writable: true,
+      configurable: true,
+    });
   });
 
+  // Only patch navigator.webdriver on Navigator.prototype if C++ flag didn't already set it to false
+  safe(() => {
+    if (navigator.webdriver) {
+      const proto = Object.getPrototypeOf(navigator);
+      const getter = maskFn(function webdriver() { return false; }, 'function get webdriver() { [native code] }');
+      Object.defineProperty(proto || navigator, 'webdriver', { get: getter, enumerable: true, configurable: true });
+    }
+  });
+
+  // Never overwrite an existing native window.chrome object!
   safe(() => {
     if (!window.chrome) {
       Object.defineProperty(window, 'chrome', {
-        value: { runtime: { connect: () => {}, sendMessage: () => {}, id: undefined } },
-        writable: true,
-        configurable: true,
-      });
-    } else if (!window.chrome.runtime) {
-      Object.defineProperty(window.chrome, 'runtime', {
-        value: { connect: () => {}, sendMessage: () => {}, id: undefined },
+        value: {
+          app: {
+            isInstalled: false,
+            InstallState: { DISABLED: 'disabled', INSTALLED: 'installed', NOT_INSTALLED: 'not_installed' },
+            RunningState: { CANNOT_RUN: 'cannot_run', READY_TO_RUN: 'ready_to_run', RUNNING: 'running' },
+          },
+          csi: maskFn(function csi() { return {}; }, 'function csi() { [native code] }'),
+          loadTimes: maskFn(function loadTimes() { return {}; }, 'function loadTimes() { [native code] }'),
+        },
         writable: true,
         configurable: true,
       });
     }
   });
 
+  // Only patch language/languages if they don't already match, and keep a stable frozen array reference
   safe(() => {
-    Object.defineProperty(navigator, 'language', { get: () => locale, configurable: true });
-    Object.defineProperty(navigator, 'languages', { get: () => languages.slice(), configurable: true });
+    const proto = Object.getPrototypeOf(navigator);
+    if (navigator.language !== locale) {
+      const getter = maskFn(function language() { return locale; }, 'function get language() { [native code] }');
+      Object.defineProperty(proto || navigator, 'language', { get: getter, enumerable: true, configurable: true });
+    }
+    if (!Array.isArray(navigator.languages) || navigator.languages.length === 0 || navigator.languages[0] !== locale) {
+      const frozenLangs = Object.freeze(languages.slice());
+      const getter = maskFn(function languages() { return frozenLangs; }, 'function get languages() { [native code] }');
+      Object.defineProperty(proto || navigator, 'languages', { get: getter, enumerable: true, configurable: true });
+    }
+  });
+
+  // Keep background SW_HIDE window looking visible & focused to fp.min.js / Volcengine / hCaptcha
+  safe(() => {
+    const origVisDesc = Object.getOwnPropertyDescriptor(Document.prototype, 'visibilityState');
+    const origVisGet = origVisDesc && origVisDesc.get;
+
+    Object.defineProperty(Document.prototype, 'visibilityState', {
+      get: maskFn(function visibilityState() { return 'visible'; }, 'function get visibilityState() { [native code] }'),
+      enumerable: true,
+      configurable: true,
+    });
+    Object.defineProperty(Document.prototype, 'hidden', {
+      get: maskFn(function hidden() { return false; }, 'function get hidden() { [native code] }'),
+      enumerable: true,
+      configurable: true,
+    });
+    if ('webkitVisibilityState' in Document.prototype) {
+      Object.defineProperty(Document.prototype, 'webkitVisibilityState', {
+        get: maskFn(function webkitVisibilityState() { return 'visible'; }, 'function get webkitVisibilityState() { [native code] }'),
+        enumerable: true,
+        configurable: true,
+      });
+    }
+    if ('webkitHidden' in Document.prototype) {
+      Object.defineProperty(Document.prototype, 'webkitHidden', {
+        get: maskFn(function webkitHidden() { return false; }, 'function get webkitHidden() { [native code] }'),
+        enumerable: true,
+        configurable: true,
+      });
+    }
+    Object.defineProperty(Document.prototype, 'hasFocus', {
+      value: maskFn(function hasFocus() { return true; }, 'function hasFocus() { [native code] }'),
+      writable: true,
+      configurable: true,
+    });
+
+    document.addEventListener('visibilitychange', (e) => {
+      try {
+        if (origVisGet && origVisGet.call(document) === 'hidden') {
+          e.stopImmediatePropagation();
+        }
+      } catch {}
+    }, true);
   });
 
   safe(() => {
@@ -158,7 +241,7 @@ function installStealth(config) {
       if (!proto || typeof proto.getParameter !== 'function') return;
       if (proto.getParameter.__stealth) return;
       const original = proto.getParameter;
-      const patched = function (parameter) {
+      const patched = maskFn(function (parameter) {
         const value = original.call(this, parameter);
         if ((parameter === 37445 || parameter === 37446) && typeof value === 'string') {
           if (/swiftshader|llvmpipe|software|basic render|mesa offscreen/i.test(value)) {
@@ -168,7 +251,7 @@ function installStealth(config) {
           }
         }
         return value;
-      };
+      }, 'function getParameter() { [native code] }');
       patched.__stealth = true;
       proto.getParameter = patched;
     };

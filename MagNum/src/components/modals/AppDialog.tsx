@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { AlertTriangle, Info } from 'lucide-react';
+import { Language, translations } from '../../i18n/translations';
 
 export interface DialogOptions {
   title: string;
@@ -13,7 +14,6 @@ interface DialogState extends DialogOptions {
   mode: 'confirm' | 'alert';
 }
 
-
 let currentResolve: ((ok: boolean) => void) | null = null;
 let currentDialog: DialogState | null = null;
 const listeners = new Set<(d: DialogState | null) => void>();
@@ -25,7 +25,7 @@ function emit(d: DialogState | null) {
 
 function openDialog(mode: 'confirm' | 'alert', opts: DialogOptions): Promise<boolean> {
   return new Promise(resolve => {
-    if (currentResolve) currentResolve(false); 
+    if (currentResolve) currentResolve(false);
     currentResolve = resolve;
     emit({ mode, ...opts });
   });
@@ -41,9 +41,9 @@ function close(ok: boolean) {
   if (r) r(ok);
 }
 
-
-export const AppDialogHost: React.FC = () => {
+export const AppDialogHost: React.FC<{ lang?: Language }> = ({ lang = 'en' }) => {
   const [dialog, setDialog] = useState<DialogState | null>(currentDialog);
+  const t = translations[lang];
 
   useEffect(() => {
     listeners.add(setDialog);
@@ -70,6 +70,7 @@ export const AppDialogHost: React.FC = () => {
       }}
     >
       <div
+        dir={lang === 'fa' ? 'rtl' : 'ltr'}
         onMouseDown={(e) => e.stopPropagation()}
         style={{
           width: 400, background: 'var(--bg-surface)',
@@ -90,7 +91,7 @@ export const AppDialogHost: React.FC = () => {
           <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-main)' }}>{dialog.title}</span>
         </div>
 
-        <div dir="auto" className="selectable-text" style={{ fontSize: 12.5, color: 'var(--text-muted)', lineHeight: 1.7, paddingLeft: 40 }}>
+        <div dir="auto" className="selectable-text" style={{ fontSize: 12.5, color: 'var(--text-muted)', lineHeight: 1.7, paddingInlineStart: 40 }}>
           {dialog.message}
         </div>
 
@@ -101,7 +102,7 @@ export const AppDialogHost: React.FC = () => {
               className="hover-bright"
               style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid var(--border-subtle)', color: 'var(--text-main)', padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
             >
-              {dialog.cancelLabel || 'Cancel'}
+              {dialog.cancelLabel || t.cancel}
             </button>
           )}
           <button
@@ -113,7 +114,7 @@ export const AppDialogHost: React.FC = () => {
               padding: '6px 16px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer'
             }}
           >
-            {dialog.confirmLabel || (isConfirm ? 'Confirm' : 'OK')}
+            {dialog.confirmLabel || (isConfirm ? t.confirm : t.ok)}
           </button>
         </div>
       </div>

@@ -4,6 +4,8 @@ import { Attachment } from '../../types';
 import { alertDialog } from '../modals/AppDialog';
 import { AttachmentPreview } from '../shared/AttachmentViews';
 import { stageAttachments as stageToProvider, unstageAttachment, trackComposerAttachments } from '../../utils/attachmentStaging';
+import { getModelCharLimit, getCharCounterThreshold, getProviderDisplayName } from '../../utils/providerLimits';
+import { Language, translations } from '../../i18n/translations';
 
 interface ChatInputBarProps {
   isRunning: boolean;
@@ -19,13 +21,12 @@ interface ChatInputBarProps {
   onToggleChatgptThink?: () => void;
   onShowBrowser?: () => void;
   onHideBrowser?: () => void;
+  lang?: Language;
 }
 
 const MAX_ATTACHMENTS = 10;
-const MAX_FILE_SIZE = 100 * 1024 * 1024; 
-const MAX_TOTAL_SIZE = 300 * 1024 * 1024; 
-const MAX_MESSAGE_CHARS = 65000;
-const CHAR_COUNTER_AT = Math.floor(MAX_MESSAGE_CHARS * 0.9); // 58500
+const MAX_FILE_SIZE = 100 * 1024 * 1024;
+const MAX_TOTAL_SIZE = 300 * 1024 * 1024;
 
 export const ChatInputBar: React.FC<ChatInputBarProps> = ({
   isRunning,
@@ -39,8 +40,11 @@ export const ChatInputBar: React.FC<ChatInputBarProps> = ({
   chatgptThink = true,
   onToggleChatgptThink,
   onShowBrowser,
-  onHideBrowser
+  onHideBrowser,
+  lang = 'en'
 }) => {
+  const t = translations[lang];
+  const isFa = lang === 'fa';
   const [val, setVal] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [isDragging, setIsDragging] = useState(false);
@@ -48,6 +52,16 @@ export const ChatInputBar: React.FC<ChatInputBarProps> = ({
   const [modelMenuPinned, setModelMenuPinned] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const maxMessageChars = getModelCharLimit(provider);
+  const charCounterAt = getCharCounterThreshold(maxMessageChars);
+
+  const handleValChange = (next: string) => {
+    setVal((prev) => {
+      if (next.length <= maxMessageChars) return next;
+      if (prev.length > maxMessageChars && next.length <= prev.length) return next;
+      return next.slice(0, maxMessageChars);
+    });
+  };
 
   useEffect(() => {
     const el = inputRef.current;
@@ -63,25 +77,27 @@ export const ChatInputBar: React.FC<ChatInputBarProps> = ({
     }
   }, [attachments, provider]);
 
-  
   const addFiles = (files: FileList | File[]) => {
     const incoming = Array.from(files);
     if (incoming.length === 0) return;
     const oversized = incoming.filter((f) => f.size > MAX_FILE_SIZE);
     if (oversized.length > 0) {
       alertDialog({
-        title: 'File too large',
-        message: `DeepSeek accepts files up to 100MB each. Skipped: ${oversized.map((f) => f.name || 'unnamed file').join(', ')}`
+        title: t.fileTooLargeTitle,
+        message: t.fileTooLargeMsg(oversized.map((f) => f.name || 'file').join(isFa ? '، ' : ', '))
       });
     }
-    
+
     const currentTotal = attachments.reduce((sum, a) => sum + (a.size || 0), 0);
     let budget = MAX_TOTAL_SIZE - currentTotal;
     const valid: File[] = [];
     for (const f of incoming) {
       if (f.size > MAX_FILE_SIZE) continue;
       if (f.size > budget) {
-        alertDialog({ title: 'Attachment limit', message: `Total size limit (${MAX_TOTAL_SIZE / (1024 * 1024)}MB) reached — "${f.name || 'unnamed file'}" and the rest were skipped.` });
+        alertDialog({
+          title: t.attachLimitTitle,
+          message: t.attachTotalLimitMsg(MAX_TOTAL_SIZE / (1024 * 1024), f.name || 'file')
+        });
         break;
       }
       valid.push(f);
@@ -90,11 +106,11 @@ export const ChatInputBar: React.FC<ChatInputBarProps> = ({
     if (valid.length === 0) return;
     const remaining = MAX_ATTACHMENTS - attachments.length;
     if (remaining <= 0) {
-      alertDialog({ title: 'Attachment limit', message: `Maximum ${MAX_ATTACHMENTS} files/images can be attached. Remove some first.` });
+      alertDialog({ title: t.attachLimitTitle, message: t.attachMaxCountMsg(MAX_ATTACHMENTS) });
       return;
     }
     if (valid.length > remaining) {
-      alertDialog({ title: 'Attachment limit', message: `Only ${remaining} of ${valid.length} file(s) added — the limit is ${MAX_ATTACHMENTS}.` });
+      alertDialog({ title: t.attachLimitTitle, message: t.attachPartialCountMsg(remaining, valid.length, MAX_ATTACHMENTS) });
     }
     valid.slice(0, remaining).forEach((file) => {
       const reader = new FileReader();
@@ -113,7 +129,6 @@ export const ChatInputBar: React.FC<ChatInputBarProps> = ({
     });
   };
 
-  
   const handlePaste = (e: React.ClipboardEvent) => {
     const files: File[] = [];
     const items = e.clipboardData?.items;
@@ -136,7 +151,6 @@ export const ChatInputBar: React.FC<ChatInputBarProps> = ({
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
-      
       if (isRunning) return;
       e.preventDefault();
       submit();
@@ -144,8 +158,14 @@ export const ChatInputBar: React.FC<ChatInputBarProps> = ({
   };
 
   const submit = () => {
-    
     if (isRunning) return;
+    if (val.length > maxMessageChars) {
+      alertDialog({
+        title: t.msgTooLongTitle,
+        message: t.msgTooLongMsg(val.length, maxMessageChars, getProviderDisplayName(provider), t.msgTooLongShortenHint)
+      });
+      return;
+    }
     if (val.trim() || attachments.length > 0) {
       onSend(val.trim(), attachments);
       setVal('');
@@ -187,12 +207,14 @@ export const ChatInputBar: React.FC<ChatInputBarProps> = ({
           flexDirection: 'column',
           gap: 4,
           boxShadow: 'var(--shadow-input)'
-        }}>
+        }}
+      >
         {attachments.length > 0 && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, padding: '6px 6px 4px', alignItems: 'center' }}>
             <AttachmentPreview
               attachments={attachments}
               variant="composer"
+              lang={lang}
               onRemove={(id) => {
                 setAttachments(prev => prev.filter(a => a.id !== id));
                 unstageAttachment(provider ?? 'deepseek', id);
@@ -205,14 +227,12 @@ export const ChatInputBar: React.FC<ChatInputBarProps> = ({
           ref={inputRef}
           rows={1}
           value={val}
-          maxLength={MAX_MESSAGE_CHARS}
-          onChange={(e) => setVal(e.target.value.slice(0, MAX_MESSAGE_CHARS))}
+          maxLength={maxMessageChars}
+          onChange={(e) => handleValChange(e.target.value)}
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
-          placeholder={isRunning
-            ? 'Agent is working... type your next message now — it sends when the task finishes'
-            : 'Send follow-up... (Ctrl+V screenshot or drop files here)'}
-          dir="auto"
+          placeholder={isRunning ? t.inputRunningPlaceholder : t.inputIdlePlaceholder}
+          dir={val ? 'auto' : (isFa ? 'rtl' : 'ltr')}
           style={{
             display: 'block',
             width: '100%',
@@ -234,22 +254,22 @@ export const ChatInputBar: React.FC<ChatInputBarProps> = ({
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
           <button
             onClick={() => fileInputRef.current?.click()}
-            title={`Attach files / images (max ${MAX_ATTACHMENTS}, 100MB each)`}
+            title={t.attachFilesTip(MAX_ATTACHMENTS)}
             className="hover-bright"
             style={{ background: 'var(--bg-card)', border: 'none', color: 'var(--text-muted)', borderRadius: '50%', width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
           >
             <Plus size={14} />
           </button>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {val.length >= CHAR_COUNTER_AT && (
-              <span className="code-font" style={{ fontSize: 10, flexShrink: 0, color: val.length >= MAX_MESSAGE_CHARS ? 'var(--diff-del-text)' : 'var(--text-dim)' }}>
-                {val.length}/{MAX_MESSAGE_CHARS}
+            {val.length >= charCounterAt && (
+              <span className="code-font" style={{ fontSize: 10, flexShrink: 0, color: val.length >= maxMessageChars ? 'var(--diff-del-text)' : 'var(--text-dim)' }}>
+                {val.length}/{maxMessageChars}
               </span>
             )}
             {provider === 'deepseek' && onToggleDeepThink && (
               <button
                 onClick={onToggleDeepThink}
-                title={isDeepThink ? 'DeepThink reasoning is ON' : 'DeepThink reasoning is OFF'}
+                title={isDeepThink ? t.deepThinkOn : t.deepThinkOff}
                 className="hover-bright"
                 style={{
                   display: 'flex', alignItems: 'center', gap: 5, fontSize: 11,
@@ -267,7 +287,7 @@ export const ChatInputBar: React.FC<ChatInputBarProps> = ({
             {provider === 'gemini' && (
               <button
                 onClick={onCycleThinking}
-                title={`Gemini Thinking Level: ${geminiThinking || 'medium'} — click to change (Low / Medium / High)`}
+                title={t.geminiThinkTip(geminiThinking || 'medium')}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 5, fontSize: 11,
                   color: 'var(--accent-green)', padding: '3px 8px', borderRadius: 8,
@@ -280,8 +300,9 @@ export const ChatInputBar: React.FC<ChatInputBarProps> = ({
               </button>
             )}
             {provider === 'chatgpt' && (
-              <button onClick={onToggleChatgptThink}
-                title={chatgptThink ? 'Think is ON (default) — extended reasoning' : 'Think is OFF — click to enable'}
+              <button
+                onClick={onToggleChatgptThink}
+                title={chatgptThink ? t.chatgptThinkOn : t.chatgptThinkOff}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 5, fontSize: 11,
                   color: chatgptThink ? '#10a37f' : 'var(--text-muted)',
@@ -289,7 +310,8 @@ export const ChatInputBar: React.FC<ChatInputBarProps> = ({
                   background: chatgptThink ? 'rgba(16,163,127,0.12)' : 'transparent',
                   border: `1px solid ${chatgptThink ? 'rgba(16,163,127,0.4)' : 'var(--border-subtle)'}`,
                   flexShrink: 0, cursor: 'pointer'
-                }}>
+                }}
+              >
                 <Brain size={11} />
                 <span style={{ fontWeight: 600 }}>Think</span>
               </button>
@@ -299,39 +321,37 @@ export const ChatInputBar: React.FC<ChatInputBarProps> = ({
               onMouseEnter={() => setModelHover(true)}
               onMouseLeave={() => setModelHover(false)}
             >
-              {}
               {(modelHover || modelMenuPinned) && (onShowBrowser || onHideBrowser) && (
                 <div style={{ position: 'absolute', bottom: '100%', left: '50%', transform: 'translateX(-50%)', paddingBottom: 6, zIndex: 60 }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3, padding: 4, background: 'var(--bg-popover)', border: '1px solid var(--border-subtle)', borderRadius: 8, boxShadow: '0 8px 22px var(--shadow-heavy)', minWidth: 140 }}>
+                  <div dir={isFa ? 'rtl' : 'ltr'} style={{ display: 'flex', flexDirection: 'column', gap: 3, padding: 4, background: 'var(--bg-popover)', border: '1px solid var(--border-subtle)', borderRadius: 8, boxShadow: '0 8px 22px var(--shadow-heavy)', minWidth: 145 }}>
                     {onShowBrowser && (
                       <button
                         onClick={onShowBrowser}
-                        title="Show provider browser window (same open tab — never a new one)"
+                        title={t.showWindowTip}
                         className="hover-bright"
                         style={{ background: 'var(--bg-card)', border: '1px solid var(--border-subtle)', color: 'var(--accent-green)', borderRadius: 6, padding: '5px 10px', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap' }}
                       >
                         <Globe size={13} />
-                        <span>Show Browser</span>
+                        <span>{t.showWindow}</span>
                       </button>
                     )}
                     {onHideBrowser && (
                       <button
                         onClick={onHideBrowser}
-                        title="Hide browser window again (back to background)"
+                        title={t.hideWindowTip}
                         className="hover-bright"
                         style={{ background: 'var(--bg-card)', border: '1px solid var(--border-subtle)', color: 'var(--text-muted)', borderRadius: 6, padding: '5px 10px', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap' }}
                       >
                         <MonitorOff size={13} />
-                        <span>Hide Browser</span>
+                        <span>{t.hideWindow}</span>
                       </button>
                     )}
                   </div>
                 </div>
               )}
-              {}
               <button
                 onClick={() => setModelMenuPinned(p => !p)}
-                title="Model is locked for this conversation"
+                title={t.modelLockedTip}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -352,7 +372,7 @@ export const ChatInputBar: React.FC<ChatInputBarProps> = ({
             {isRunning ? (
               <button
                 onClick={onStop}
-                title="Stop"
+                title={t.stopTip}
                 style={{ background: '#ef4444', border: 'none', borderRadius: '50%', width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
               >
                 <Square size={10} fill="#fff" color="#fff" />

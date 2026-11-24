@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { RightPanelTab } from './types';
-import { Language } from './i18n/translations';
+import { ModelProvider, RightPanelTab } from './types';
+import { ChatGptMemoryModalHost, maybeShowChatGptMemoryNotice } from './components/modals/ChatGptMemoryModal';
+import { Language, translations } from './i18n/translations';
 import { useMagNumSocket } from './hooks/useMagNumSocket';
 import { TopMenuBar } from './components/layout/TopMenuBar';
 import { confirmDialog, AppDialogHost } from './components/modals/AppDialog';
@@ -74,6 +75,7 @@ export default function App() {
   const [language, setLanguage] = useState<Language>(() => {
     return (localStorage.getItem('magnum_lang') as Language) || 'en';
   });
+  const t = translations[language];
 
 const [theme, setTheme] = useState<'dark' | 'light'>(() => {
   return localStorage.getItem('magnum_theme') === 'light' ? 'light' : 'dark';
@@ -125,6 +127,7 @@ const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     revertedEditIds,
     animateId,
     networkRetry,
+    captchaRequired,
     geminiThinking,
     setGeminiThinking,
     chatgptThink,
@@ -139,7 +142,17 @@ const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     folderPickerNotice,
     setFolderPickerNotice,
     browseDir
-  } = useMagNumSocket((tab) => { if (tab) openRightTab(tab); });
+  } = useMagNumSocket((tab) => { if (tab) openRightTab(tab); }, language);
+
+  const handleSelectProvider = useCallback((p: ModelProvider) => {
+    setSelectedProvider(p);
+    if (p === 'chatgpt') maybeShowChatGptMemoryNotice();
+  }, [setSelectedProvider]);
+
+  const handleDefaultProviderChange = useCallback((p: ModelProvider) => {
+    setDefaultProvider(p);
+    if (p === 'chatgpt') maybeShowChatGptMemoryNotice();
+  }, [setDefaultProvider]);
 
   const cycleGeminiThinking = useCallback(() => {
     const order: ('low' | 'medium' | 'high')[] = ['low', 'medium', 'high'];
@@ -163,7 +176,7 @@ const [theme, setTheme] = useState<'dark' | 'light'>(() => {
 
 
 
-  const repoName = activeWorkspace ? activeWorkspace.split(/[\\/]/).filter(Boolean).pop() || activeWorkspace : 'No Repo';
+  const repoName = activeWorkspace ? activeWorkspace.split(/[\\/]/).filter(Boolean).pop() || activeWorkspace : t.noRepo;
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -176,6 +189,7 @@ const [theme, setTheme] = useState<'dark' | 'light'>(() => {
   }, [theme]);
 
   useEffect(() => {
+    document.documentElement.lang = language;
     sendAction('set_language', { lang: language });
   }, [language, sendAction]);
 
@@ -224,12 +238,13 @@ const [theme, setTheme] = useState<'dark' | 'light'>(() => {
   onToggleTab={(t) => { if (rightPanelTab === t) setRightPanelTab(null); else openRightTab(t); }}
   onOpenFilters={() => setIsSettingsOpen(true)}
   onDiagnose={() => sendAction('diagnose')}
+  lang={language}
 />
 
       {isSettingsOpen ? (
         <SettingsView
           defaultProvider={defaultProvider}
-          onDefaultProviderChange={setDefaultProvider}
+          onDefaultProviderChange={handleDefaultProviderChange}
           geminiThinking={geminiThinking}
           onGeminiThinkingChange={setGeminiThinking}
           chatgptThink={chatgptThink}
@@ -256,7 +271,6 @@ const [theme, setTheme] = useState<'dark' | 'light'>(() => {
               activeWorkspace={activeWorkspace}
               sessions={sessions}
               currentSessionId={currentSessionId}
-
               recentWorkspaces={recentWorkspaces}
               onNewChat={() => sendAction('new_chat')}
               onOpenFolder={handleOpenFolder}
@@ -268,6 +282,7 @@ const [theme, setTheme] = useState<'dark' | 'light'>(() => {
               onDeleteSession={(id) => sendAction('delete_session', { sessionId: id })}
               onDiagnose={() => setIsSettingsOpen(true)}
               onToggleSidebar={() => setIsSidebarOpen(false)}
+              lang={language}
             />
           )}
 
@@ -295,7 +310,7 @@ const [theme, setTheme] = useState<'dark' | 'light'>(() => {
                 isSidebarOpen={isSidebarOpen}
                 onToggleSidebar={() => setIsSidebarOpen(prev => !prev)}
                 selectedProvider={selectedProvider}
-                onSelectProvider={setSelectedProvider}
+                onSelectProvider={handleSelectProvider}
                 geminiThinking={geminiThinking}
                 onCycleThinking={cycleGeminiThinking}
                 chatgptThink={chatgptThink}
@@ -305,24 +320,22 @@ const [theme, setTheme] = useState<'dark' | 'light'>(() => {
                 onShowProvider={(p) => sendAction('show_provider_browser', { provider: p })}
                 onHideProvider={(p) => sendAction('hide_provider_browser', { provider: p })}
                 onDisconnectProvider={async (p) => {
+                  const modelName = p === 'gemini' ? 'Gemini' : p === 'chatgpt' ? 'ChatGPT' : 'DeepSeek';
                   const ok = await confirmDialog({
-                    title: p === 'gemini' ? 'Disconnect Gemini' : p === 'chatgpt' ? 'Disconnect ChatGPT' : 'Disconnect DeepSeek',
-                    message: p === 'gemini'
-                      ? 'Disconnect Gemini? The saved Google profile is kept for fast reconnect.'
-                      : p === 'chatgpt'
-                        ? 'Disconnect ChatGPT? The saved OpenAI profile is kept for fast reconnect.'
-                        : 'Disconnect from DeepSeek? Your saved login profile will be kept, so the app reconnects automatically next time.',
-                    confirmLabel: 'Disconnect',
-                    cancelLabel: 'Cancel',
+                    title: t.disconnectModelTitle(modelName),
+                    message: t.disconnectModelMsg(modelName),
+                    confirmLabel: t.confirmDisconnect,
+                    cancelLabel: t.cancel,
                     danger: true
                   });
                   if (ok) sendAction(p === 'gemini' ? 'logout_gemini' : p === 'chatgpt' ? 'logout_chatgpt' : 'logout');
                 }}
                 providerLocked={Boolean(currentSessionId)}
+                lang={language}
               />
             ) : (
               <MessageList
-                  sessionTitle={stripSkillPrefix(messages[0]?.text || '').slice(0, 30) || 'Project overview insights'}
+                  sessionTitle={stripSkillPrefix(messages[0]?.text || '').slice(0, 30) || t.defaultSessionTitle}
                   repoName={repoName}
                   messages={messages}
                   streamingState={streamingState}
@@ -344,6 +357,7 @@ const [theme, setTheme] = useState<'dark' | 'light'>(() => {
 isRunning={isRunning}
                     animateId={animateId}
                     networkRetry={networkRetry}
+                    captchaRequired={captchaRequired}
                     sessionId={currentSessionId}
                     inputBar={
                       <ChatInputBar
@@ -363,6 +377,7 @@ isRunning={isRunning}
                         onOpenFolder={handleOpenFolder}
                         onShowBrowser={() => sendAction('show_provider_browser', { provider: selectedProvider })}
                         onHideBrowser={() => sendAction('hide_provider_browser', { provider: selectedProvider })}
+                        lang={language}
                       />
                     }
                  />
@@ -415,15 +430,18 @@ isRunning={isRunning}
           localStorage.setItem('magnum_ignored_list', JSON.stringify(list));
           sendAction('update_ignored_list', { ignored: list, path: activeWorkspace });
         }}
+        lang={language}
       />
-      <AppDialogHost />
-      <ImageViewerHost />
+      <AppDialogHost lang={language} />
+      <ChatGptMemoryModalHost lang={language} />
+      <ImageViewerHost lang={language} />
       <FolderPickerModal
         open={folderPickerOpen}
         notice={folderPickerNotice}
         onClose={() => setFolderPickerOpen(false)}
         onPick={(p) => { setFolderPickerOpen(false); openWorkspace(p); }}
         browseDir={browseDir}
+        lang={language}
       />
     </div>
     </UpdateGate>

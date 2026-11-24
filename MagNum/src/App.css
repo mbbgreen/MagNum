@@ -109,6 +109,7 @@ body, html, #root {
   display: flex; align-items: center; justify-content: space-between;
   padding: 6px 10px; font-size: 12px; color: var(--text-main);
   border-radius: 5px; cursor: pointer; transition: all 0.12s ease;
+  text-align: start;
 }
 .dropdown-item:hover { background: var(--bg-surface-hover); color: var(--text-main); }
 .dropdown-divider { height: 1px; background: var(--border-subtle); margin: 4px 0; }

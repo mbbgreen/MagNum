@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { 
   ArrowLeft, 
+  ArrowRight,
   Search, 
   Settings as GeneralIcon, 
   Palette, 
@@ -72,7 +73,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const t = translations[currentLang];
 
   return (
-    <div style={{
+    <div
+      dir={currentLang === 'fa' ? 'rtl' : 'ltr'}
+      style={{
       display: 'flex',
       height: '100%',
       width: '100%',
@@ -84,7 +87,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       <aside style={{
         width: '260px',
         minWidth: '260px',
-        borderRight: '1px solid var(--border-subtle)',
+        borderInlineEnd: '1px solid var(--border-subtle)',
         background: 'var(--bg-topbar)',
         display: 'flex',
         flexDirection: 'column',
@@ -108,7 +111,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           }}
           className="hover-bright"
         >
-          <ArrowLeft size={14} />
+          {currentLang === 'fa' ? <ArrowRight size={14} /> : <ArrowLeft size={14} />}
           <span>{t.back}</span>
         </button>
 
@@ -241,7 +244,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
 
           <div 
-            onClick={() => alertDialog({ title: 'Docs', message: 'MagNum Agent Docs v1.0.0' })}
+            onClick={() => alertDialog({ title: t.docs, message: t.docsInfo })}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -270,7 +273,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 .then(m => m.openUrl('https://nethersgames.com'))
                 .catch(() => window.open('https://nethersgames.com', '_blank'));
             }}
-            title="Nethers Games — سازنده مگنوم"
+            title={t.nethersTitle}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -315,8 +318,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <h2 style={{ fontSize: '18px', fontWeight: 700 }}>{t.browserNetwork}</h2>
 
             {diagnosticResult && (
-              <div style={{ padding: '10px 14px', borderRadius: 8, border: `1px solid ${diagnosticResult.ok ? 'rgba(16,185,129,0.4)' : 'rgba(239,68,68,0.4)'}`, background: diagnosticResult.ok ? 'var(--accent-green-dim)' : 'var(--diff-del)', color: diagnosticResult.ok ? 'var(--diff-add-text)' : 'var(--diff-del-text)', fontSize: 12 }}>
-                <b>[{diagnosticResult.status}]</b> {diagnosticResult.message}
+              <div dir={currentLang === 'fa' ? 'rtl' : 'ltr'} style={{ padding: '10px 14px', borderRadius: 8, border: `1px solid ${diagnosticResult.ok ? 'rgba(16,185,129,0.4)' : 'rgba(239,68,68,0.4)'}`, background: diagnosticResult.ok ? 'var(--accent-green-dim)' : 'var(--diff-del)', color: diagnosticResult.ok ? 'var(--diff-add-text)' : 'var(--diff-del-text)', fontSize: 12, lineHeight: 1.7 }}>
+                {diagnosticResult.message}
               </div>
             )}
 
@@ -332,7 +335,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <div style={{ fontSize: '12px', color: 'var(--text-dim)', marginTop: '2px' }}>{t.browserAutomationDesc}</div>
                 </div>
                 <div style={{ background: 'rgba(255,255,255,0.06)', padding: '4px 10px', borderRadius: '6px', fontSize: '12px', border: '1px solid var(--border-subtle)' }}>
-                  Stealth Browser Tab ▾
+                  {t.browserModeLabel}
                 </div>
               </div>
 
@@ -419,7 +422,7 @@ background: 'var(--bg-surface)',
                     }}
                     className="hover-bright"
                   >
-                    Run Diagnostic
+                    {t.runDiagnosticBtn}
                   </button>
                 </div>
               </div>
@@ -533,16 +536,16 @@ background: 'var(--bg-surface)',
             <span style={{ width: '60%', height: '8px', borderRadius: '4px', background: 'rgba(255,255,255,0.12)' }} />
             <span style={{ width: '20%', height: '8px', borderRadius: '4px', background: 'rgba(16,185,129,0.5)' }} />
           </div>
-          <div style={{ fontSize: '12px', fontWeight: 600, color: '#f3f4f6' }}>Dark Emerald</div>
-          <div style={{ fontSize: '10.5px', color: '#9ca3af', marginTop: '2px' }}>Deep OLED-friendly workspace</div>
+          <div style={{ fontSize: '12px', fontWeight: 600, color: '#f3f4f6' }}>{t.themeDarkTitle}</div>
+          <div style={{ fontSize: '10.5px', color: '#9ca3af', marginTop: '2px' }}>{t.themeDarkDesc}</div>
         </div>
         <div onClick={() => onThemeChange('light')} style={{ padding: '12px', borderRadius: '10px', border: currentTheme === 'light' ? '2px solid var(--accent-green)' : '1px solid var(--border-subtle)', background: '#ffffff', cursor: 'pointer' }}>
           <div style={{ height: '56px', background: '#f1f5f3', borderRadius: '6px', border: '1px solid rgba(15,23,20,0.1)', borderLeft: '3px solid #059669', marginBottom: '8px', display: 'flex', alignItems: 'center', padding: '0 10px', gap: '6px' }}>
             <span style={{ width: '60%', height: '8px', borderRadius: '4px', background: 'rgba(15,23,20,0.12)' }} />
             <span style={{ width: '20%', height: '8px', borderRadius: '4px', background: 'rgba(5,150,105,0.45)' }} />
           </div>
-          <div style={{ fontSize: '12px', fontWeight: 600, color: '#111827' }}>White Emerald</div>
-          <div style={{ fontSize: '10.5px', color: '#4b5563', marginTop: '2px' }}>Clean daylight studio palette</div>
+          <div style={{ fontSize: '12px', fontWeight: 600, color: '#111827' }}>{t.themeLightTitle}</div>
+          <div style={{ fontSize: '10.5px', color: '#4b5563', marginTop: '2px' }}>{t.themeLightDesc}</div>
         </div>
       </div>
     </div>

@@ -174,7 +174,7 @@ const AGENT_STRINGS = {
     fullFile: 'full file',
     linesRange: (a, b) => `lines ${a}–${b}`,
     lineLabel: (n) => `line ${n}`,
-    moreAvailable: '⏳ More lines available — get the next 1000-line window with continue_reading',
+    moreAvailable: '⏳ More file lines remain',
     searchLabel: 'Searched for:',
     results: (n) => `(${n} result${n === 1 ? '' : 's'})`,
     noMatch: 'No matches found.',
@@ -182,36 +182,100 @@ const AGENT_STRINGS = {
     patchOk: 'patch applied successfully.',
     patchErr: (m) => `error - ${m}`,
     rejected: (f) => `Changes to \`${f}\` were rejected by the user.`,
+    cmdRejected: (c) => `Command \`${c}\` was rejected by the user.`,
+    listedDir: 'Listed directory:',
+    browsed: 'Browsed:',
+    readPage: 'Read page:',
+    creatingFileMsg: (f) => `Creating file: ${f}`,
+    execCmdMsg: (c) => `Executing command: ${c}`,
+    completedFallback: 'Completed successfully.',
+    statusNaturalPause: (sec) => `Pacing requests (${sec}s)...`,
+    statusScanning: 'Scanning workspace tree...',
+    statusSending: (p) => `Sending task to ${p}...`,
+    statusTreeRefresh: 'Workspace changed — refreshing project tree...',
+    statusSendingFollowup: (p) => `Sending follow-up task to ${p}...`,
+    statusThinking: (p) => `${p} is thinking...`,
+    statusRatePause: (rem) => `Rate limit pause (${rem}s remaining)...`,
+    statusRateResend: 'Rate limit cleared — re-sending request...',
+    statusRateStop: (p) => `${p} rate limit reached — waiting for quota reset or provider switch.`,
+    statusNoNewStop: 'No new response detected — task stopped safely.',
+    statusIncompleteRetry: 'Incomplete response — requesting next step...',
+    statusMalformedRetry: 'Incomplete edit response — requesting retry...',
+    statusReadingFile: (file, rText) => `Reading file: ${file}${rText}`,
+    statusListingDir: (target) => `Listing directory: ${target}`,
+    statusWaitPatch: (file) => `Waiting for user approval to patch ${file}...`,
+    statusApplyingPatches: (n) => `Applying ${n} patch(es)...`,
+    statusCreatingFile: (f) => `Creating file: ${f}`,
+    statusWaitCmd: 'Waiting for user approval to run command...',
+    statusExecCmd: (c) => `Executing command: ${c}`,
+    statusBrowsing: (t) => `Browsing: ${t}`,
+    statusSendingResults: (p) => `Sending results back to ${p}...`,
+    statusStopped: 'Task was stopped by user.',
+    errRatePersisted: 'DeepSeek rate limit persisted after multiple retries.',
+    noNewRespMsg: '**No new model response was detected for this turn.** Stale-answer protection prevented showing an outdated answer; no changes were made. Please re-send your prompt.',
+    unusableRespMsg: '**Model response was unusable (3 consecutive attempts).** No changes were made. Re-send your prompt or switch model.',
     rateLimitChatGpt: '**ChatGPT usage limit reached.** Your free-plan quota for this window is exhausted.\n• Wait for the limit to reset, or\n• Switch to DeepSeek / Gemini from the model pill and re-send this prompt.\nThe task was stopped safely; nothing was lost.\n• MagNum blocks new ChatGPT requests during an automatic cooldown window.',
-    rateLimitGemini: '**Gemini rate limit reached (daily quota).** AI Studio replied: "You\'ve reached your rate limit." This Google account\'s quota for today is exhausted.\n• Wait until the quota resets (usually next day), or\n• Switch to DeepSeek from the model pill and re-send this prompt.\nThe task was stopped safely; nothing was lost.\n• MagNum now blocks new Gemini requests during an automatic cooldown window to protect the account.'
+    rateLimitGemini: '**Gemini rate limit reached (daily quota).** This account\'s quota for today is exhausted.\n• Wait until the quota resets (usually next day), or\n• Switch to DeepSeek from the model pill and re-send this prompt.\nThe task was stopped safely; nothing was lost.\n• MagNum blocks new Gemini requests during an automatic cooldown window.'
   },
   fa: {
     readFiles: 'بررسی فایل‌ها:',
     fullFile: 'کل فایل',
-    linesRange: (a, b) => `خطوط ${a} تا ${b}`,
-    lineLabel: (n) => `خط ${n}`,
-    moreAvailable: '⏳ خطوط بیشتری باقی است — پنجرهٔ ۱۰۰۰ خط بعدی را با continue_reading بگیر',
+    linesRange: (a, b) => `خطوط \u200F${a}\u200F تا \u200F${b}\u200F`,
+    lineLabel: (n) => `خط \u200F${n}\u200F`,
+    moreAvailable: '⏳ بخش‌های دیگری از این فایل باقی مانده است',
     searchLabel: 'جستجو برای:',
     results: (n) => `(${n} نتیجه)`,
     noMatch: 'موردی یافت نشد.',
     patchesLabel: (a, b) => `اعمال پچ‌ها (${a}/${b}):`,
-    patchOk: 'پچ با موفقیت اعمال شد.',
-    patchErr: (m) => `خطا - ${m}`,
-    rejected: (f) => `تغییرات فایل \`${f}\` توسط کاربر لغو شد.`,
-    rateLimitChatGpt: '**به سقف مصرف ChatGPT رسیدیم.** سهمیهٔ پلن رایگان در این بازه تمام شده است.\n• تا ریست شدن محدودیت صبر کنید، یا\n• از پیل مدل به DeepSeek / Gemini سوییچ کنید و همین پرامپت را دوباره بفرستید.\nتسک به‌صورت امن متوقف شد؛ هیچ تغییری از دست نرفته است.\n• مگنوم تا پایان پنجرهٔ خنک‌سازی هیچ درخواست جدیدی به ChatGPT نمی‌فرستد.',
-    rateLimitGemini: '**به سقف مصرف روزانهٔ جمنای رسیدیم.** پاسخ AI Studio: «You\'ve reached your rate limit». سهمیهٔ امروز این حساب گوگل تمام شده است.\n• تا شارژ مجدد سهمیه (معمولاً روز بعد) صبر کنید، یا\n• از پیل مدل به دیپ‌سیک سوییچ کنید و همین پرامپت را دوباره بفرستید.\nتسک به‌صورت امن متوقف شد؛ هیچ تغییری از دست نرفته است.\n• مگنوم تا پایان پنجرهٔ خنک‌سازی به‌صورت خودکار هیچ درخواست جدیدی به جمنای نمی‌فرستد.'
+    patchOk: 'تغییرات با موفقیت اعمال شد.',
+    patchErr: (m) => `خطا - \u200F${m}\u200F`,
+    rejected: (f) => `تغییرات فایل \u200F\`${f}\`\u200F توسط کاربر لغو شد.`,
+    cmdRejected: (c) => `اجرای دستور \u200F\`${c}\`\u200F توسط کاربر رد شد.`,
+    listedDir: 'فهرست پوشه:',
+    browsed: 'مرور صفحه:',
+    readPage: 'خواندن صفحه:',
+    creatingFileMsg: (f) => `ساخت فایل: \u200F${f}\u200F`,
+    execCmdMsg: (c) => `اجرای دستور: \u200F${c}\u200F`,
+    completedFallback: 'عملیات با موفقیت انجام شد.',
+    statusNaturalPause: (sec) => `مکث کوتاه (\u200F${sec}\u200F ثانیه) برای پایداری اتصال...`,
+    statusScanning: 'در حال بررسی ساختار پروژه...',
+    statusSending: (p) => `در حال ارسال درخواست به \u200F${p}\u200F...`,
+    statusTreeRefresh: 'ساختار پروژه تغییر کرده است — در حال به‌روزرسانی...',
+    statusSendingFollowup: (p) => `در حال ارسال ادامه گفتگو به \u200F${p}\u200F...`,
+    statusThinking: (p) => `\u200F${p}\u200F در حال تحلیل و فکر کردن است...`,
+    statusRatePause: (rem) => `مکث موقت محدودیت سرویس (\u200F${rem}\u200F ثانیه باقی‌مانده)...`,
+    statusRateResend: 'محدودیت برطرف شد — در حال ارسال مجدد درخواست...',
+    statusRateStop: (p) => `سقف مصرف \u200F${p}\u200F پر شده است — در انتظار باز شدن سهمیه یا تغییر مدل.`,
+    statusNoNewStop: 'پاسخ جدیدی دریافت نشد — عملیات به‌صورت امن متوقف گردید.',
+    statusIncompleteRetry: 'پاسخ مدل کامل نبود — درخواست ادامه کار...',
+    statusMalformedRetry: 'ساختار تغییرات ناقص بود — درخواست ارسال مجدد...',
+    statusReadingFile: (file, rText) => `در حال خواندن فایل: \u200F${file}${rText}\u200F`,
+    statusListingDir: (target) => `در حال بررسی پوشه: \u200F${target}\u200F`,
+    statusWaitPatch: (file) => `در انتظار تأیید کاربر برای تغییر فایل \u200F${file}\u200F...`,
+    statusApplyingPatches: (n) => `در حال اعمال \u200F${n}\u200F تغییر...`,
+    statusCreatingFile: (f) => `در حال ساخت فایل: \u200F${f}\u200F`,
+    statusWaitCmd: 'در انتظار تأیید کاربر برای اجرای دستور...',
+    statusExecCmd: (c) => `در حال اجرای دستور: \u200F${c}\u200F`,
+    statusBrowsing: (t) => `در حال مرور نشانی: \u200F${t}\u200F`,
+    statusSendingResults: (p) => `در حال ارسال نتایج به \u200F${p}\u200F...`,
+    statusStopped: 'عملیات توسط کاربر متوقف شد.',
+    errRatePersisted: 'محدودیت سرویس \u200FDeepSeek\u200F پس از چند تلاش مجدد همچنان پابرجاست.',
+    noNewRespMsg: '**پاسخ جدیدی از مدل دریافت نشد.** برای جلوگیری از نمایش پاسخ قدیمی، عملیات بدون اعمال تغییر متوقف شد. لطفاً پیام را دوباره بفرستید.',
+    unusableRespMsg: '**پاسخ مدل قابل استفاده نبود (\u200F3\u200F تلاش پیاپی).** هیچ تغییری اعمال نشد؛ پیام را دوباره ارسال کنید یا مدل دیگری انتخاب نمایید.',
+    rateLimitChatGpt: '**به سقف مصرف \u200FChatGPT\u200F رسیدیم.** سهمیهٔ پلن رایگان در این بازه تمام شده است.\n• تا باز شدن مجدد محدودیت صبر کنید، یا\n• از منوی انتخاب مدل به \u200FDeepSeek\u200F یا \u200FGemini\u200F تغییر دهید و همین پیام را دوباره بفرستید.\nعملیات به‌صورت امن متوقف شد؛ هیچ تغییری از دست نرفته است.\n• مگنوم تا پایان دورهٔ محدودیت، درخواست جدیدی به \u200FChatGPT\u200F نمی‌فرستد.',
+    rateLimitGemini: '**به سقف مصرف روزانهٔ \u200FGemini\u200F رسیدیم.** سهمیهٔ امروز این حساب گوگل تمام شده است.\n• تا شارژ مجدد سهمیه (معمولاً روز بعد) صبر کنید، یا\n• از منوی انتخاب مدل به \u200FDeepSeek\u200F یا \u200FChatGPT\u200F تغییر دهید و همین پیام را دوباره بفرستید.\nعملیات به‌صورت امن متوقف شد؛ هیچ تغییری از دست نرفته است.\n• مگنوم تا پایان دورهٔ محدودیت، درخواست جدیدی به \u200FGemini\u200F نمی‌فرستد.'
   }
 };
 
-const RATE_LIMIT_TEXT_RE = /reached your rate limit|please try again later|reached your quota|quota for the day|wait for it to reset|upgrade to go further|too many requests|resource.{0,12}exhausted|HTTP\s*429|status[^0-9\n]{0,10}429/i;
+const RATE_LIMIT_TEXT_RE = /you(?:'ve| have) reached your (?:rate |usage )?limit|you(?:'ve| have) reached (?:the|your) (?:current )?(?:usage|daily) (?:cap|quota|limit)|quota for the day|wait for it to reset|upgrade to (?:plus|pro|go further)|too many requests[\s,!.]+(?:please )?try again later|resource has been exhausted/i;
 
 function looksLikeRateLimit(text) {
   if (typeof text !== 'string') return false;
-  const fence = /```[\s\S]*?```/g;
-  const prose = text.replace(fence, '').replace(/`[^`]*`/g, '');
-  if (/"action"\s*:/.test(prose)) return false;
-  if (prose.trim().length > 600) return false;
-  return RATE_LIMIT_TEXT_RE.test(prose);
+  if (/```/.test(text)) return false;
+  if (/"(?:action|thought|params|patches|search|replace|content)"\s*:/.test(text)) return false;
+  const trimmed = text.trim();
+  if (!trimmed || trimmed.length > 350) return false;
+  return RATE_LIMIT_TEXT_RE.test(trimmed);
 }
 
 const CHANGE_REQUEST_RE = /```|patch_file|create_file|"search"\s*:|"replace"\s*:|\b(implement|apply|fix|add|remove|delete|refactor|rename|create|patch|replace|insert|update|change|build|install)\b|فایل|پچ|اعمال|حذف|اضافه|جایگزین|درست\s*کن|بساز|پیاده/i;
@@ -254,6 +318,11 @@ class CodingAgent {
     this.readsDelivered = 0;
     this.mutationsApplied = 0;
     this.prematureFinishRetries = 0;
+    this.lang = 'en';
+  }
+
+  L() {
+    return AGENT_STRINGS[this.lang === 'fa' ? 'fa' : 'en'] || AGENT_STRINGS.en;
   }
 
   resolvePendingPatch(approved = true) {
@@ -301,7 +370,7 @@ class CodingAgent {
     const delay = Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
     const sec = (delay / 1000).toFixed(1);
     console.log(`⏳ [${label}] Waiting ${sec}s to pace requests naturally...`);
-    this.emit('agent_status', { text: `Natural pause (${sec}s) to protect account...` });
+    this.emit('agent_status', { text: this.L().statusNaturalPause(sec) });
 
     const startTime = Date.now();
     while (Date.now() - startTime < delay) {
@@ -458,7 +527,7 @@ class CodingAgent {
     this.isStopped = false;
     this.pendingChunks = [];
     this.readResume = null;
-    const L = AGENT_STRINGS[options.lang === 'fa' ? 'fa' : 'en'] || AGENT_STRINGS.en;
+    const L = this.L();
     const P = options.provider === 'gemini' ? 'Gemini' : options.provider === 'chatgpt' ? 'ChatGPT' : 'DeepSeek';
     this.activeTask = String(task || '');
     this.taskIsChange = detectChangeRequest(this.activeTask, options.skill);
@@ -466,6 +535,8 @@ class CodingAgent {
     this.readsDelivered = 0;
     this.mutationsApplied = 0;
     this.prematureFinishRetries = 0;
+    this.lang = options.lang === 'fa' ? 'fa' : 'en';
+    if (this.driver) this.driver.lang = this.lang;
 
     const windowSummary = (chunk) => {
       const rows = (chunk.segments || []).map(s => s.error
@@ -510,7 +581,7 @@ class CodingAgent {
         ? options.projectTree
         : await this.tools.getProjectTree();
       console.log('\n🔍 Scanning workspace tree...');
-      this.emit('agent_status', { text: 'Scanning workspace tree...' });
+      this.emit('agent_status', { text: this.L().statusScanning });
       if (this.isStopped) return;
 
       initialMessage = `${SYSTEM_PROMPT}${modeInstructions}
@@ -524,24 +595,24 @@ ${task}
 Respond ONLY with ONE \`\`\`json block (use "read_files" / "search_code" for project files, or "finish" directly for greetings/general replies). Do not ask the user to upload files.`;
 
       console.log(`📤 Sending system prompt + task to ${P}...`);
-      this.emit('agent_status', { text: `Sending system prompt & task to ${P}...` });
+      this.emit('agent_status', { text: this.L().statusSending(P) });
     } else {
       const treeSection = (typeof options.treeUpdate === 'string' && options.treeUpdate)
         ? `\n=== UPDATED WORKSPACE TREE ===\n${options.treeUpdate}\n========================\n`
         : '';
       if (treeSection) {
         console.log('🌲 Workspace structure changed since last turn — sending updated file tree...');
-        this.emit('agent_status', { text: 'Workspace changed — refreshing project tree...' });
+        this.emit('agent_status', { text: this.L().statusTreeRefresh });
       }
       initialMessage = `${modeInstructions}NEW USER TASK:
 ${task}
 ${treeSection}
 Reply ONLY with ONE \`\`\`json block (use "read_files" / "search_code" if you need project files, or "finish" directly for greetings/general replies).`;
       console.log('📤 Sending FOLLOW-UP task only (system prompt already in context)...');
-      this.emit('agent_status', { text: `Sending follow-up task to ${P}...` });
+      this.emit('agent_status', { text: this.L().statusSendingFollowup(P) });
     }
 
-    await new Promise(r => setTimeout(r, Math.floor(Math.random() * 150) + 150));
+    await new Promise(r => setTimeout(r, Math.floor(Math.random() * 700) + 700));
     if (this.isStopped) return;
 
     let lastSentMessage = initialMessage;
@@ -555,13 +626,21 @@ Reply ONLY with ONE \`\`\`json block (use "read_files" / "search_code" if you ne
 
     let taskFinished = false;
     let rateLimitStop = false;
+    let rateLimitProvider = null;
     let noNewStop = false;
     let loopRepeatCount = 0;
+
+    if (this.driver) {
+      this.driver._onCaptcha = (captchaState) => {
+        if (this.isStopped) return;
+        this.emit('captcha_state', captchaState);
+      };
+    }
 
     while (true) {
       if (this.isStopped) break;
 
-      this.emit('agent_status', { text: `${P} is thinking...` });
+      this.emit('agent_status', { text: this.L().statusThinking(P) });
 
       let response;
       let rateLimitAttempts = 0;
@@ -579,6 +658,14 @@ Reply ONLY with ONE \`\`\`json block (use "read_files" / "search_code" if you ne
             (statusText) => {
               if (this.isStopped) return;
               this.emit('agent_status', { text: statusText });
+            },
+            (retryInfo) => {
+              if (this.isStopped) return;
+              this.emit('network_retry', retryInfo);
+            },
+            (captchaState) => {
+              if (this.isStopped) return;
+              this.emit('captcha_state', captchaState);
             }
           );
           break;
@@ -594,11 +681,13 @@ Reply ONLY with ONE \`\`\`json block (use "read_files" / "search_code" if you ne
           if (waitErr.code === 'GEMINI_RATE_LIMIT' || (waitErr.message && waitErr.message.includes('GEMINI_RATE_LIMIT'))) {
             console.warn('⚠️ Gemini rate limit / quota reached — stopping task with a clear notice.');
             rateLimitStop = true;
+            rateLimitProvider = 'gemini';
             break;
           }
           if (waitErr.code === 'CHATGPT_RATE_LIMIT' || (waitErr.message && waitErr.message.includes('CHATGPT_RATE_LIMIT'))) {
             console.warn('⚠️ ChatGPT usage/rate limit reached — stopping task with a clear notice.');
             rateLimitStop = true;
+            rateLimitProvider = 'chatgpt';
             break;
           }
           if (waitErr.code === 'CHATGPT_LOGIN_REQUIRED' || (waitErr.message && waitErr.message.includes('CHATGPT_LOGIN_REQUIRED'))) {
@@ -606,7 +695,7 @@ Reply ONLY with ONE \`\`\`json block (use "read_files" / "search_code" if you ne
           }
           if (waitErr.code === 'LENGTH_LIMIT_REACHED' || (waitErr.message && waitErr.message.includes('LENGTH_LIMIT_REACHED'))) {
             if (rateLimitAttempts >= MAX_RATE_LIMIT_RETRIES) {
-              throw new Error('DeepSeek rate limit persisted after multiple retries.');
+              throw new Error(this.L().errRatePersisted);
             }
             rateLimitAttempts++;
 
@@ -618,7 +707,7 @@ Reply ONLY with ONE \`\`\`json block (use "read_files" / "search_code" if you ne
               if (this.isStopped) return;
               const rem = Math.ceil((cooldownSec * 1000 - (Date.now() - startTime)) / 1000);
               this.emit('agent_status', {
-                text: `DeepSeek rate limit pause (${rem}s remaining to protect account)...`
+                text: this.L().statusRatePause(rem)
               });
               await new Promise(r => setTimeout(r, 1000));
             }
@@ -626,8 +715,8 @@ Reply ONLY with ONE \`\`\`json block (use "read_files" / "search_code" if you ne
             if (this.isStopped) return;
 
             console.log('🔄 Rate limit cleared. Re-sending the current turn message to DeepSeek...');
-            this.emit('agent_status', { text: 'Rate limit cleared. Re-sending payload to DeepSeek...' });
-            await this.driver.sendMessage(lastSentMessage);
+            this.emit('agent_status', { text: this.L().statusRateResend });
+            await this.driver.sendMessage(lastSentMessage, { provider: options.provider, lang: this.lang });
             continue;
           }
           throw waitErr;
@@ -636,17 +725,14 @@ Reply ONLY with ONE \`\`\`json block (use "read_files" / "search_code" if you ne
 
       this.emit('agent_streaming_end', {});
 
-      if (looksLikeRateLimit(response)) {
-        console.warn('⚠️ Rate-limit banner detected in model response — stopping without any retry.');
-        rateLimitStop = true;
-      }
-
       if (rateLimitStop) {
-        const rlProvider = options.provider === 'chatgpt' ? 'chatgpt' : 'gemini';
+        const rlProvider = rateLimitProvider === 'chatgpt' ? 'chatgpt'
+          : (rateLimitProvider === 'gemini' ? 'gemini'
+          : (options.provider === 'chatgpt' ? 'chatgpt' : 'gemini'));
         this.emit('provider_rate_limit', { provider: rlProvider });
         if (rlProvider === 'gemini') this.emit('gemini_rate_limit', { provider: 'gemini' });
         const msg = rlProvider === 'chatgpt' ? L.rateLimitChatGpt : L.rateLimitGemini;
-        this.emit('agent_status', { text: `${P} rate limit reached — waiting for quota reset or provider switch.` });
+        this.emit('agent_status', { text: this.L().statusRateStop(P) });
         this.emit('agent_message', { role: 'agent', text: msg, thought: '', action: 'finish' });
         this.emit('task_finished', { summary: msg });
         taskFinished = true;
@@ -655,10 +741,8 @@ Reply ONLY with ONE \`\`\`json block (use "read_files" / "search_code" if you ne
       if (this.isStopped) break;
 
       if (noNewStop) {
-        const msg = options.lang === 'fa'
-          ? '**پاسخ جدیدی از مدل دریافت نشد.** محافظ ضد پاسخ قدیمی جلوی نمایش جواب اشتباه (متعلق به تسک قبلی) را گرفت؛ هیچ تغییری اعمال نشد. لطفاً پرامپت را دوباره بفرستید.'
-          : '**No new model response was detected for this turn.** The stale-answer protection blocked a wrong (previous-turn) answer; no changes were made. Please re-send your prompt.';
-        this.emit('agent_status', { text: 'No new response detected — task stopped safely.' });
+        const msg = this.L().noNewRespMsg;
+        this.emit('agent_status', { text: this.L().statusNoNewStop });
         this.emit('agent_message', { role: 'agent', text: msg, thought: '', action: 'finish' });
         this.emit('task_finished', { summary: msg });
         taskFinished = true;
@@ -668,11 +752,22 @@ Reply ONLY with ONE \`\`\`json block (use "read_files" / "search_code" if you ne
       const decision = this.parseResponse(response);
 
       if (!decision || !decision.action) {
+        if ((options.provider === 'gemini' || options.provider === 'chatgpt') && looksLikeRateLimit(response)) {
+          console.warn('⚠️ Plain-text rate-limit response detected — stopping without retry.');
+          const rlProvider = options.provider;
+          this.emit('provider_rate_limit', { provider: rlProvider });
+          if (rlProvider === 'gemini') this.emit('gemini_rate_limit', { provider: 'gemini' });
+          const msg = rlProvider === 'chatgpt' ? L.rateLimitChatGpt : L.rateLimitGemini;
+          this.emit('agent_status', { text: this.L().statusRateStop(P) });
+          this.emit('agent_message', { role: 'agent', text: msg, thought: '', action: 'finish' });
+          this.emit('task_finished', { summary: msg });
+          taskFinished = true;
+          break;
+        }
+
         consecutiveFormatRetries++;
         if (consecutiveFormatRetries > 2) {
-          const limitMsg = options.lang === 'fa'
-            ? '**پاسخ مدل قابل استفاده نبود (۳ تلاش پشت‌سرهم).** هیچ تغییری اعمال نشد؛ پرامپت را دوباره بفرستید یا مدل را عوض کنید.'
-            : '**Model response was unusable (3 consecutive attempts).** No changes were made. Re-send your prompt or switch model.';
+          const limitMsg = this.L().unusableRespMsg;
           this.emit('agent_message', { role: 'agent', text: limitMsg, thought: '', action: 'finish' });
           this.emit('task_finished', { summary: limitMsg });
           taskFinished = true;
@@ -691,7 +786,7 @@ Reply ONLY with ONE \`\`\`json block (use "read_files" / "search_code" if you ne
             : `\`\`\`json\n{"thought": "Answer user", "action": "finish", "params": {"summary": "Your answer here"}}\n\`\`\``);
 
         lastSentMessage = formatRetryMsg;
-        await this.driver.sendMessage(formatRetryMsg, { provider: options.provider });
+        await this.driver.sendMessage(formatRetryMsg, { provider: options.provider, lang: this.lang });
         continue;
       }
 
@@ -711,7 +806,7 @@ Reply ONLY with ONE \`\`\`json block (use "read_files" / "search_code" if you ne
         if (premature) {
           this.prematureFinishRetries++;
           console.warn(`🛑 finish rejected (${this.prematureFinishRetries}/2): change task, zero edits, noSummary=${noSummary}, confused=${confused}.`);
-          this.emit('agent_status', { text: 'finish rejected — asking model for next JSON action...' });
+          this.emit('agent_status', { text: this.L().statusIncompleteRetry });
           const corrective =
             `Your "finish" was rejected because this is a code-change task and 0 edits have been applied${noSummary ? ' (summary was empty)' : ''}.\n` +
             `Do NOT ask the user to upload files or clarify. Reply ONLY with the next \`\`\`json action ("read_files", "search_code", "patch_file", or "create_file").` +
@@ -719,10 +814,10 @@ Reply ONLY with ONE \`\`\`json block (use "read_files" / "search_code" if you ne
           await this.randomDelay(1500, 2500, 'Contract Enforcement');
           if (this.isStopped) break;
           lastSentMessage = corrective;
-          await this.driver.sendMessage(corrective, { provider: options.provider });
+          await this.driver.sendMessage(corrective, { provider: options.provider, lang: this.lang });
           continue;
         }
-        const summary = String(rawSummary).replace(/<\/?(?:PRIVATE_NOTE|badge|details|summary)[^>]*>/gi, '').trim() || 'Completed successfully.';
+        const summary = String(rawSummary).replace(/<\/?(?:PRIVATE_NOTE|badge|details|summary)[^>]*>/gi, '').trim() || this.L().completedFallback;
         console.log('\n🎉 Task Finished!');
 
         this.emit('agent_streaming_end', {});
@@ -786,7 +881,7 @@ Reply ONLY with ONE \`\`\`json block (use "read_files" / "search_code" if you ne
             const rText = range && (range.start_line || range.end_line)
               ? ` (lines ${range.start_line || 1}-${range.end_line || 'end'})`
               : ' (from line 1)';
-            this.emit('agent_status', { text: `Reading file: ${filePath}${rText}` });
+            this.emit('agent_status', { text: this.L().statusReadingFile(filePath, rText) });
           });
           const chunk = chunks[0];
           this.readResume = chunk.hasMore ? chunk.remaining : null;
@@ -836,11 +931,11 @@ Reply ONLY with ONE \`\`\`json block (use "read_files" / "search_code" if you ne
         } else {
           lastListSignature = `${target}:${depth}`;
           console.log(`📂 Listing directory: ${target}`);
-          this.emit('agent_status', { text: `Listing directory: ${target}` });
+          this.emit('agent_status', { text: this.L().statusListingDir(target) });
           const listResult = await this.tools.listDirectory(target, depth);
           this.emit('agent_message', {
             role: 'agent',
-            text: `**Listed directory:** \`${listResult.path}\``,
+            text: `**${this.L().listedDir}** \`${listResult.path}\``,
             thought: fullThought,
             action: 'list_dir'
           });
@@ -894,9 +989,9 @@ Reply ONLY with ONE \`\`\`json block (use "read_files" / "search_code" if you ne
           const retryMsg =
             `Your previous patch_file JSON could not be parsed. Re-send the SAME patches inside ONE valid \`\`\`json block (escape newlines as \\n and quotes as \\").\n` +
             (this.taskIsChange ? taskReminderBlock(this.activeTask) : '');
-          this.emit('agent_status', { text: 'Patch JSON was malformed — asking model to resend...' });
+          this.emit('agent_status', { text: this.L().statusMalformedRetry });
           lastSentMessage = retryMsg;
-          await this.driver.sendMessage(retryMsg, { provider: options.provider });
+          await this.driver.sendMessage(retryMsg, { provider: options.provider, lang: this.lang });
           continue;
         }
 
@@ -904,7 +999,7 @@ Reply ONLY with ONE \`\`\`json block (use "read_files" / "search_code" if you ne
 
         if (!isAutoApply && patchesList.length > 0) {
           const firstPatch = patchesList[0];
-          this.emit('agent_status', { text: `Waiting for user approval to patch ${firstPatch.file}...` });
+          this.emit('agent_status', { text: this.L().statusWaitPatch(firstPatch.file) });
 
           this.emit('patch_proposed', {
             file: firstPatch.file,
@@ -927,12 +1022,12 @@ Reply ONLY with ONE \`\`\`json block (use "read_files" / "search_code" if you ne
               action: 'patch_file'
             });
             lastSentMessage = toolFeedback;
-            await this.driver.sendMessage(toolFeedback, { provider: options.provider });
+            await this.driver.sendMessage(toolFeedback, { provider: options.provider, lang: this.lang });
             continue;
           }
         }
 
-        this.emit('agent_status', { text: `Applying ${patchesList.length} patch(es)...` });
+        this.emit('agent_status', { text: this.L().statusApplyingPatches(patchesList.length) });
         patchResult = await this.tools.patchBatch(patchesList);
         if (patchResult && patchResult.successful > 0) this.mutationsApplied += patchResult.successful;
 
@@ -971,12 +1066,12 @@ Reply ONLY with ONE \`\`\`json block (use "read_files" / "search_code" if you ne
         console.log(`📄 Creating file: ${file}`);
         this.emit('agent_message', {
           role: 'agent',
-          text: fullThought || `Creating file: ${file}`,
+          text: fullThought || this.L().creatingFileMsg(file),
           thought: fullThought,
           action: 'create_file',
           file
         });
-        this.emit('agent_status', { text: `Creating file: ${file}` });
+        this.emit('agent_status', { text: this.L().statusCreatingFile(file) });
         const createResult = await this.tools.createFile(file, content);
         if (createResult && createResult.success) this.mutationsApplied++;
 
@@ -994,7 +1089,7 @@ Reply ONLY with ONE \`\`\`json block (use "read_files" / "search_code" if you ne
           const isAutoApprove = Boolean(options.autoApproveCommand);
 
           if (!isAutoApprove) {
-            this.emit('agent_status', { text: 'Waiting for user approval to run command...' });
+            this.emit('agent_status', { text: this.L().statusWaitCmd });
             this.emit('command_proposed', { command });
 
             const approved = await new Promise(resolve => {
@@ -1005,25 +1100,25 @@ Reply ONLY with ONE \`\`\`json block (use "read_files" / "search_code" if you ne
               toolFeedback = `TOOL RESULT: The user REJECTED this command: "${command}". Propose an alternative or finish.`;
               this.emit('agent_message', {
                 role: 'agent',
-                text: `Command \`${command}\` was rejected by the user.`,
+                text: this.L().cmdRejected(command),
                 thought: fullThought,
                 action: 'execute_command',
                 command
               });
               lastSentMessage = toolFeedback;
-              await this.driver.sendMessage(toolFeedback, { provider: options.provider });
+              await this.driver.sendMessage(toolFeedback, { provider: options.provider, lang: this.lang });
               continue;
             }
           }
 
           this.emit('agent_message', {
             role: 'agent',
-            text: fullThought || `Executing command: ${command}`,
+            text: fullThought || this.L().execCmdMsg(command),
             thought: fullThought,
             action: 'execute_command',
             command
           });
-          this.emit('agent_status', { text: `Executing command: ${command}` });
+          this.emit('agent_status', { text: this.L().statusExecCmd(command) });
           const execResult = await this.tools.executeCommand(command);
           toolFeedback = `TOOL RESULT:\n\`\`\`json\n${JSON.stringify(execResult, null, 2)}\n\`\`\``;
         }
@@ -1034,11 +1129,11 @@ Reply ONLY with ONE \`\`\`json block (use "read_files" / "search_code" if you ne
         } else {
           const target = decision.params?.url || decision.params?.query || '';
           console.log(`🌐 Browsing: ${target}`);
-          this.emit('agent_status', { text: `Browsing: ${target}` });
+          this.emit('agent_status', { text: this.L().statusBrowsing(target) });
           const res = await this.browser.navigate(target);
           this.emit('agent_message', {
             role: 'agent',
-            text: `**Browsed:** \`${res.title}\` (${res.url})`,
+            text: `**${this.L().browsed}** \`${res.title}\` (${res.url})`,
             thought: fullThought,
             action: 'browse_web'
           });
@@ -1054,7 +1149,7 @@ Reply ONLY with ONE \`\`\`json block (use "read_files" / "search_code" if you ne
           const res = await this.browser.readRange(start, end);
           this.emit('agent_message', {
             role: 'agent',
-            text: `**Read page:** \`${res.title}\` (${L.linesRange(start, Math.min(end, res.totalLines))})`,
+            text: `**${this.L().readPage}** \`${res.title}\` (${L.linesRange(start, Math.min(end, res.totalLines))})`,
             thought: fullThought,
             action: 'read_page'
           });
@@ -1083,13 +1178,15 @@ Reply ONLY with ONE \`\`\`json block (use "read_files" / "search_code" if you ne
       }
 
       console.log(`📤 Sending results back to ${P}...`);
-      this.emit('agent_status', { text: `Sending results back to ${P}...` });
+      this.emit('agent_status', { text: this.L().statusSendingResults(P) });
       lastSentMessage = toolFeedback;
-      await this.driver.sendMessage(toolFeedback, { provider: options.provider });
+      await this.driver.sendMessage(toolFeedback, { provider: options.provider, lang: this.lang });
     }
 
+    if (this.driver) this.driver._onCaptcha = null;
+
     if (this.isStopped) {
-      this.emit('task_stopped', { message: 'Task was stopped by user.' });
+      this.emit('task_stopped', { message: this.L().statusStopped });
     }
   }
 }

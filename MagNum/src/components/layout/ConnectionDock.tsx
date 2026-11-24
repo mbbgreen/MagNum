@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Globe, LogOut, ChevronDown, Check, MonitorOff, Lock } from 'lucide-react';
+import { Language, translations } from '../../i18n/translations';
 
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected';
 export type ProviderName = 'deepseek' | 'gemini' | 'chatgpt';
@@ -14,6 +15,7 @@ interface ConnectionDockProps {
   onHideBrowser: (p: ProviderName) => void;
   onDisconnect: (p: ProviderName) => void;
   locked?: boolean;
+  lang?: Language;
 }
 
 const META: Record<ProviderName, { label: string; color: string }> = {
@@ -22,18 +24,20 @@ const META: Record<ProviderName, { label: string; color: string }> = {
   chatgpt: { label: 'ChatGPT', color: '#10a37f' }
 };
 
-const STATUS_TEXT: Record<ConnectionStatus, string> = {
-  disconnected: 'Disconnected',
-  connecting: 'Waiting for login…',
-  connected: 'Connected'
-};
-
 export const ConnectionDock: React.FC<ConnectionDockProps> = ({
   providers, selectedProvider, onSelectProvider, onConnect,
-  onShowBrowser, onHideBrowser, onDisconnect, locked = false
+  onShowBrowser, onHideBrowser, onDisconnect, locked = false, lang = 'en'
 }) => {
   const [open, setOpen] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
+  const t = translations[lang];
+  const isFa = lang === 'fa';
+
+  const statusText: Record<ConnectionStatus, string> = {
+    disconnected: t.statusDisconnected,
+    connecting: t.statusConnecting,
+    connected: t.statusConnected
+  };
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
@@ -74,35 +78,35 @@ export const ConnectionDock: React.FC<ConnectionDockProps> = ({
         opacity: locked && !active ? 0.45 : 1
       }}>
         {dot(s, META[p].color)}
-        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-main)', flex: 1, minWidth: 0 }}>
+        <span dir="ltr" style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-main)', flex: 1, minWidth: 0, textAlign: isFa ? 'right' : 'left' }}>
           {META[p].label}
         </span>
         <span style={{ fontSize: 10.5, color: s === 'connected' ? META[p].color : 'var(--text-dim)', flexShrink: 0 }}>
-          {STATUS_TEXT[s]}
+          {statusText[s]}
         </span>
         {active && <Check size={12} color="var(--accent-green)" style={{ flexShrink: 0 }} />}
 
         {s !== 'disconnected' && (
           <span style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
             <span style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-              <button onClick={() => onShowBrowser(p)} title="Show Browser" className="hover-bright"
+              <button onClick={() => onShowBrowser(p)} title={t.showWindowTip} className="hover-bright"
                 style={{
                   background: 'transparent', border: 'none', color: 'var(--text-muted)',
                   cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3,
-                  padding: '1px 4px', borderRadius: 4, fontSize: 9, fontWeight: 600, whiteSpace: 'nowrap'
+                  padding: '1px 4px', borderRadius: 4, fontSize: 9.5, fontWeight: 600, whiteSpace: 'nowrap'
                 }}>
-                <Globe size={10} /> Show Browser
+                <Globe size={10} /> {t.showWindow}
               </button>
-              <button onClick={() => onHideBrowser(p)} title="Hide Browser" className="hover-bright"
+              <button onClick={() => onHideBrowser(p)} title={t.hideWindowTip} className="hover-bright"
                 style={{
                   background: 'transparent', border: 'none', color: 'var(--text-dim)',
                   cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3,
-                  padding: '1px 4px', borderRadius: 4, fontSize: 9, fontWeight: 600, whiteSpace: 'nowrap'
+                  padding: '1px 4px', borderRadius: 4, fontSize: 9.5, fontWeight: 600, whiteSpace: 'nowrap'
                 }}>
-                <MonitorOff size={10} /> Hide Browser
+                <MonitorOff size={10} /> {t.hideWindow}
               </button>
             </span>
-            <button onClick={() => onDisconnect(p)} title="Disconnect (profile kept)" className="hover-bright"
+            <button onClick={() => onDisconnect(p)} title={t.disconnectTitle} className="hover-bright"
               style={{ background: 'transparent', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', display: 'flex', padding: 3, borderRadius: 6 }}>
               <LogOut size={12} />
             </button>
@@ -114,7 +118,7 @@ export const ConnectionDock: React.FC<ConnectionDockProps> = ({
 
   return (
     <div ref={boxRef} style={{ position: 'relative' }}>
-      <button onClick={() => setOpen(v => !v)} title="AI model & connection" className="hover-bright"
+      <button onClick={() => setOpen(v => !v)} title={t.modelConnTitle} className="hover-bright"
         style={{
           display: 'flex', alignItems: 'center', gap: 6,
           background: 'var(--bg-card)', border: '1px solid var(--border-subtle)',
@@ -128,15 +132,15 @@ export const ConnectionDock: React.FC<ConnectionDockProps> = ({
       </button>
 
       {open && (
-        <div style={{
+        <div dir={isFa ? 'rtl' : 'ltr'} style={{
           position: 'absolute', bottom: '100%', left: 0, marginBottom: 8,
-          width: 310, background: 'var(--bg-popover)',
+          width: 320, background: 'var(--bg-popover)',
           border: '1px solid var(--border-subtle)', borderRadius: 12,
           boxShadow: '0 16px 40px var(--shadow-heavy)', padding: 8, zIndex: 4000,
           display: 'flex', flexDirection: 'column', gap: 6
         }}>
-          <span style={{ fontSize: 10, color: 'var(--text-dim)', fontWeight: 700, letterSpacing: 0.4, padding: '0 4px' }}>
-            AI PROVIDERS {locked ? '(locked to this chat)' : '(one active at a time)'}
+          <span style={{ fontSize: 10, color: 'var(--text-dim)', fontWeight: 700, letterSpacing: isFa ? 0 : 0.4, padding: '0 4px' }}>
+            {t.aiProvidersHeader} {locked ? t.providersLockedNote : t.providersSingleNote}
           </span>
           {row('deepseek')}
           {row('gemini')}
